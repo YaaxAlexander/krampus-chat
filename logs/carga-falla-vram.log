@@ -1,0 +1,143 @@
+   1.734  ***
+   1.734  Welcome to KoboldCpp - Version 1.122
+   1.734  Loading Chat Completions Adapter: /usr/share/koboldcpp/kcpp_adapters/AutoGuess.json
+   1.734  Chat Completions Adapter Loaded
+   1.734  No GPU or CPU backend was selected. Trying to assign one for you automatically...
+   1.734  Auto Selected CUDA Backend (flag=0)
+   1.734  
+   1.734  System: Linux #1 SMP PREEMPT_DYNAMIC Sat, 03 Oct 2026 11:43:28 +0000 x86_64 
+   1.734  Detected Available GPU Memory: 4096 MB
+   1.734  Detected Available RAM: 16805 MB
+   1.734  Initializing dynamic library: koboldcpp_cublas.so
+   1.734  ==========
+   1.735  Namespace(usecuda=['normal', 'mmq'], usevulkan=None, usecpu=False, model=['models/llama3/Llama-3.2-3B-Instruct-Q4_K_M.gguf'], model_param='models/llama3/Llama-3.2-3B-Instruct-Q4_K_M.gguf', config=None, contextsize=65536, gpulayers=99, host='', launch=False, tensor_split=None, threads=3, port=5001, port_param=5001, version=False, agent=False, analyze='', autofit=False, autofitpadding=1024, batchsize=512, ubatchsize=-1, benchmark=None, blasthreads=0, chatcompletionsadapter='AutoGuess', cli=False, debugmode=0, defaultgenamt=2048, device='', downloaddir='', draftamount=4, draftgpulayers=999, draftgpusplit=None, draftmodel='', enableguidance=False, exportconfig='', exporttemplate='', failsafe=False, foreground=False, gendefaults='', gendefaultsoverwrite=False, genlimit=0, highpriority=False, ignoremissing=False, jinja=False, jinja_kwargs='', jinja_tools=False, jinjatemplate='', jinjathink='default', lora=None, loramult=1.0, lowvram=False, maingpu=-1, maxrequestsize=32, mcpfile='', mmproj='', mmprojcpu=False, moecpu=0, ffncpu=0, moeexperts=-1, multiuser=10, multiplayer=False, nocertify=False, nofastforward=False, noflashattention=False, noavx2=False, nobostoken=False, nommq=False, nomodel=False, noshift=False, noswa=False, onready='', allow_config_onready=False, overridekv='', overridenativecontext=0, overridetensors='', parallelrequests=1, password=None, preloadstory='', prompt='', quantkv='f16', quiet=False, ratelimit=0, reasoningeffort='default', remotetunnel=False, ropeconfig=[0.0, 10000.0], savedatafile='', singleinstance=False, smartcache=0, smartcontext=False, splitmode='layer', ssl=None, swapadding=0, unpack='', usemtp=False, usemlock=False, usemmap=False, usedirectio=False, visionmaxres=1024, visionmaxtokens=-1, visionmintokens=-1, websearch=False, showgui=False, skiplauncher=False, hordemodelname='', hordeworkername='', hordekey='', hordemaxctx=0, hordegenlen=0, sdaudiovae='', sdclamped=0, sdclampedsoft=0, sdclip1='', sdclip2='', sdclipdevice=-2, sdconvdirect='off', sdflashattention=False, sdlora=[], sdloramult=[1.0], sdmaingpu=None, sdmodel='', sdoffloadcpu=False, sdphotomaker='', sdquant=0, sdllm='', sdthreads=0, sdtiledvae=512, sdupscaler='', sdvae='', sdvaeauto=False, sdvaedevice=-1, sdvramlimit=0, whispermodel='', ttsmodel='', ttswavtokenizer='', ttsgpu=False, ttsmaxlen=4096, ttsthreads=0, ttsdir='', musicllm='', musicembeddings='', musicdiffusion='', musicvae='', musiclowvram=False, embeddingsmodel='', embeddingsmaxctx=4096, embeddingsgpu=False, rpcmode='disabled', rpcport=5551, rpchost='0.0.0.0', rpcdevice='', rpctargets='', admin=False, adminpassword=None, admindir='', adminunloadtimeout=0, routermode=False, reqtimeout=600, autoswapmode=False, autoswapthreshold=256, baseconfig='', hordeconfig=None, sdconfig=None, noblas=False, nommap=False, nopipelineparallel=False, pipelineparallel=False, sdnotile=False, sdt5xxl=None, sdvaecpu=False, sdclipgpu=False, forceversion=False, sdgendefaults=False, flashattention=False, useswa=False, testmemory=False, run_bundled_agent=False, agent_base_url=None, agent_api_key=None, proxy_port=None)
+   1.735  ==========
+   1.735  Loading Text Model: /home/yaax/Workspace/Codebases/krampus-chat/models/llama3/Llama-3.2-3B-Instruct-Q4_K_M.gguf
+   1.777  ggml_cuda_init: found 1 CUDA devices (Total VRAM: 3730 MiB):
+   1.777    Device 0: NVIDIA GeForce GTX 1650, compute capability 7.5, VMM: yes, VRAM: 3730 MiB
+   1.777  The following devices will have suboptimal performance due to a lack of tensor cores:
+   1.777    Device 0: NVIDIA GeForce GTX 1650
+   1.777  Consider compiling with CMAKE_CUDA_ARCHITECTURES=61-virtual;80-virtual and DGGML_CUDA_FORCE_MMQ to force the use of the Pascal code for Turing.
+   1.813  llama_model_loader: loaded meta data with 31 key-value pairs and 255 tensors from /home/yaax/Workspace/Codebases/krampus-chat/models/llama3/Llama-3.2-3B-Instruct-Q4_K_M.gguf (version GGUF V3 (latest))
+   1.813  print_info: file format = GGUF V3 (latest)
+   1.813  print_info: file type   = Q4_1
+   1.813  print_info: file size   = 1.87 GiB (5.01 BPW) 
+   1.898  llama_prepare_model_devices: using device CUDA0 (NVIDIA GeForce GTX 1650) (0000:01:00.0) - 3576 MiB free
+   2.026  init_tokenizer: initializing tokenizer for type 2
+   2.052  load: 0 unused tokens
+   2.079  load: printing all EOG tokens:
+   2.079  load:   - 128001 ('<|end_of_text|>')
+   2.079  load:   - 128008 ('<|eom_id|>')
+   2.079  load:   - 128009 ('<|eot_id|>')
+   2.079  load: special tokens cache size = 256
+   2.119  load: token to piece cache size = 0.7999 MB
+   2.119  print_info: arch                  = llama
+   2.119  print_info: vocab_only            = 0
+   2.119  print_info: no_alloc              = 0
+   2.119  print_info: n_ctx_train           = 131072
+   2.119  print_info: n_embd_inp            = 3072
+   2.119  print_info: n_embd                = 3072
+   2.119  print_info: n_embd_out            = 3072
+   2.119  print_info: n_layer               = 28
+   2.119  print_info: n_layer_all           = 28
+   2.119  print_info: n_head                = 24
+   2.119  print_info: n_head_kv             = 8
+   2.119  print_info: n_rot                 = 128
+   2.119  print_info: n_swa                 = 0
+   2.119  print_info: is_swa_any            = 0
+   2.120  print_info: non_causal_type       = 0
+   2.120  print_info: n_embd_head_k         = 128
+   2.120  print_info: n_embd_head_v         = 128
+   2.120  print_info: n_gqa                 = 3
+   2.120  print_info: n_embd_k_gqa          = 1024
+   2.120  print_info: n_embd_v_gqa          = 1024
+   2.120  print_info: f_norm_eps            = 0.0e+00
+   2.120  print_info: f_norm_rms_eps        = 1.0e-05
+   2.120  print_info: f_clamp_kqv           = 0.0e+00
+   2.120  print_info: f_max_alibi_bias      = 0.0e+00
+   2.120  print_info: f_logit_scale         = 0.0e+00
+   2.120  print_info: f_attn_scale          = 0.0e+00
+   2.120  print_info: f_attn_value_scale    = 0.0000
+   2.120  print_info: n_ff                  = 8192
+   2.120  print_info: n_expert              = 0
+   2.120  print_info: n_expert_used         = 0
+   2.120  print_info: n_expert_groups       = 0
+   2.120  print_info: n_group_used          = 0
+   2.120  print_info: causal attn           = 1
+   2.120  print_info: pooling type          = -1
+   2.120  print_info: rope type             = 0
+   2.120  print_info: rope scaling          = linear
+   2.120  print_info: freq_base_train       = 500000.0
+   2.120  print_info: freq_scale_train      = 1
+   2.120  print_info: n_ctx_orig_yarn       = 131072
+   2.120  print_info: rope_yarn_log_mul     = 0.0000
+   2.120  print_info: rope_finetuned        = unknown
+   2.120  print_info: model type            = 3B
+   2.121  print_info: model params          = 3.21 B
+   2.121  print_info: general.name          = Llama 3.2 3B Instruct
+   2.121  print_info: vocab type            = BPE
+   2.121  print_info: n_vocab               = 128256
+   2.121  print_info: n_merges              = 280147
+   2.121  print_info: BOS token             = 128000 '<|begin_of_text|>'
+   2.121  print_info: EOS token             = 128009 '<|eot_id|>'
+   2.121  print_info: EOT token             = 128009 '<|eot_id|>'
+   2.121  print_info: EOM token             = 128008 '<|eom_id|>'
+   2.121  print_info: LF token              = 198 'Ċ'
+   2.121  print_info: EOG token             = 128001 '<|end_of_text|>'
+   2.121  print_info: EOG token             = 128008 '<|eom_id|>'
+   2.121  print_info: EOG token             = 128009 '<|eot_id|>'
+   2.121  print_info: max token length      = 256
+   2.121  load_tensors: loading model tensors, this can take a while... (load_mode = none)
+   2.204  load_tensors: offloading output layer to GPU
+   2.204  load_tensors: offloading 27 repeating layers to GPU
+   2.204  load_tensors: offloaded 29/29 layers to GPU
+   2.204  load_tensors:        CUDA0 model buffer size =  1918.35 MiB
+   2.204  load_tensors:    CUDA_Host model buffer size =   308.23 MiB
+   2.205  load_all_data: using async uploads for device CUDA0, buffer type CUDA0, backend CUDA0
+   2.665  ...........................................................................
+   2.666  llama_context: constructing llama_context
+   2.666  llama_context: n_seq_max             = 1
+   2.666  llama_context: n_ctx                 = 65792
+   2.666  llama_context: n_ctx_seq             = 65792
+   2.666  llama_context: n_batch               = 512
+   2.666  llama_context: n_ubatch              = 512
+   2.666  llama_context: causal_attn           = 1
+   2.666  llama_context: flash_attn            = enabled
+   2.666  llama_context: kv_unified            = true
+   2.666  llama_context: freq_base             = 500000.0
+   2.666  llama_context: freq_scale            = 1
+   2.666  llama_context: n_rs_seq              = 0
+   2.666  llama_context: n_outputs_max         = 512
+   2.666  llama_context: n_outputs_max_per_seq = 1
+   2.666  llama_context: n_ctx_seq (65792) < n_ctx_train (131072) -- the full capacity of the model will not be utilized
+   2.666  set_abort_callback: call
+   2.667  llama_context:  CUDA_Host  output buffer size =     0.49 MiB
+   2.667  ggml_backend_cuda_buffer_type_alloc_buffer: allocating 7196.00 MiB on device 0: cudaMalloc failed: out of memory
+   2.668  alloc_tensor_range: failed to allocate CUDA0 buffer of size 7545552896
+   2.671  llama_init_from_model: failed to initialize the context: failed to allocate buffer for kv cache
+   2.671  gpttype_load_model: error: failed to load model '/home/yaax/Workspace/Codebases/krampus-chat/models/llama3/Llama-3.2-3B-Instruct-Q4_K_M.gguf'
+   3.671  Load Text Model OK: False
+   3.671  
+   3.671  Could not load text model: /home/yaax/Workspace/Codebases/krampus-chat/models/llama3/Llama-3.2-3B-Instruct-Q4_K_M.gguf
+   5.673  
+   5.673  The reported GGUF Arch is: llama
+   5.673  Arch Category: 1
+   5.673  
+   5.673  ---
+   5.673  Identified as GGUF model.
+   5.673  Attempting to Load...
+   5.673  ---
+   5.673  Using automatic RoPE scaling for GGUF. If the model has custom RoPE settings, they'll be used directly instead!
+   5.673  System Info: AVX = 1 | AVX_VNNI = 0 | AVX2 = 1 | AVX512 = 0 | AVX512_VBMI = 0 | AVX512_VNNI = 0 | AVX512_BF16 = 0 | AMX_INT8 = 0 | FMA = 1 | NEON = 0 | SVE = 0 | ARM_FMA = 0 | F16C = 1 | FP16_VA = 0 | RISCV_VECT = 0 | WASM_SIMD = 0 | SSE3 = 1 | SSSE3 = 1 | VSX = 0 | MATMUL_INT8 = 0 | LLAMAFILE = 1 | 
+   5.673  Number of Backends: 3
+   5.673  Backend 0: CUDA
+   5.673  Backend 1: RPC
+   5.673  Backend 2: CPU
+   5.673  CUDA MMQ: True
+   5.673  ---
+   5.673  Initializing CUDA/HIP, please wait, the following step may take a few minutes (only for first launch)...
+   5.673  ---
+   5.673  
+   5.673  This model does not use SWA
+   5.673  Automatic RoPE Scaling: Using (scale:1.000, base:500000.0).
+exit code de koboldcpp: 3

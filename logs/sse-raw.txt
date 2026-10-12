@@ -1,0 +1,117 @@
+event: message
+data: {"token": "El", "finish_reason": null}
+
+event: message
+data: {"token": " inv", "finish_reason": null}
+
+event: message
+data: {"token": "i", "finish_reason": null}
+
+event: message
+data: {"token": "erno", "finish_reason": null}
+
+event: message
+data: {"token": " lleg", "finish_reason": null}
+
+event: message
+data: {"token": "a", "finish_reason": null}
+
+event: message
+data: {"token": " con", "finish_reason": null}
+
+event: message
+data: {"token": " su", "finish_reason": null}
+
+event: message
+data: {"token": " fr", "finish_reason": null}
+
+event: message
+data: {"token": "\u00edo", "finish_reason": null}
+
+event: message
+data: {"token": " y", "finish_reason": null}
+
+event: message
+data: {"token": " su", "finish_reason": null}
+
+event: message
+data: {"token": " nie", "finish_reason": null}
+
+event: message
+data: {"token": "ve", "finish_reason": null}
+
+event: message
+data: {"token": ",", "finish_reason": null}
+
+event: message
+data: {"token": " y", "finish_reason": null}
+
+event: message
+data: {"token": " tr", "finish_reason": null}
+
+event: message
+data: {"token": "ae", "finish_reason": null}
+
+event: message
+data: {"token": " cons", "finish_reason": null}
+
+event: message
+data: {"token": "igo", "finish_reason": null}
+
+event: message
+data: {"token": " un", "finish_reason": null}
+
+event: message
+data: {"token": " aire", "finish_reason": null}
+
+event: message
+data: {"token": " fres", "finish_reason": null}
+
+event: message
+data: {"token": "co", "finish_reason": null}
+
+event: message
+data: {"token": " y", "finish_reason": null}
+
+event: message
+data: {"token": " lim", "finish_reason": null}
+
+event: message
+data: {"token": "pio", "finish_reason": null}
+
+event: message
+data: {"token": ".", "finish_reason": null}
+
+event: message
+data: {"token": "  (", "finish_reason": null}
+
+event: message
+data: {"token": "La", "finish_reason": null}
+
+event: message
+data: {"token": " frase", "finish_reason": null}
+
+event: message
+data: {"token": " tiene", "finish_reason": null}
+
+event: message
+data: {"token": " 15", "finish_reason": null}
+
+event: message
+data: {"token": " palabras", "finish_reason": null}
+
+event: message
+data: {"token": " y", "finish_reason": null}
+
+event: message
+data: {"token": " describe", "finish_reason": null}
+
+event: message
+data: {"token": " la", "finish_reason": null}
+
+event: message
+data: {"token": " sens", "finish_reason": null}
+
+event: message
+data: {"token": "", "finish_reason": "length"}
+

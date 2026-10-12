@@ -13,13 +13,13 @@ contestar en abstracto**. Scripts sucios, tirar a la basura después.
 - [x] Correr `koboldcpp-cuda` a mano y capturar **todo el stdout** de una carga
       completa a un archivo. ¿Hay porcentaje de progreso o solo ruido? ¿Qué línea
       exacta marca "servidor listo"? → ver `NOTES-backend.md`
-- [ ] Capturar el stdout de una carga que **falla por VRAM insuficiente**. ¿El
+- [x] Capturar el stdout de una carga que **falla por VRAM insuficiente**. ¿El
       proceso muere, se cuelga, o escupe error y sigue vivo?
-- [ ] `curl` crudo contra `/api/extra/generate/stream`. Guardar la respuesta raw.
+- [x] `curl` crudo contra `/api/extra/generate/stream`. Guardar la respuesta raw.
       ¿Los eventos SSE llegan completos o hay que bufferear fragmentos?
-- [ ] Abrir `http://localhost:5001/api` y guardar el esquema de los payloads que
+- [x] Abrir `http://localhost:5001/api` y guardar el esquema de los payloads que
       vamos a usar.
-- [ ] Cronometrar cuánto tarda realmente una carga. ¿Spinner o barra de progreso?
+- [x] Cronometrar cuánto tarda realmente una carga. ¿Spinner o barra de progreso?
 
 **Entregable:** un `NOTES-backend.md` con las respuestas. Esto alimenta todo lo demás.
 

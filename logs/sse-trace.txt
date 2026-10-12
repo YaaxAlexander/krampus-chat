@@ -1,0 +1,197 @@
+17:15:38.050028 * Host localhost:5001 was resolved.
+17:15:38.050101 * IPv6: ::1
+17:15:38.050103 * IPv4: 127.0.0.1
+17:15:38.050115 *   Trying [::1]:5001...
+17:15:38.050327 * Established connection to localhost (::1 port 5001) from ::1 port 45142 
+17:15:38.050331 * using HTTP/1.x
+17:15:38.050424 => Send header, 156 bytes (0x9c)
+0000: POST /api/extra/generate/stream HTTP/1.1
+002a: Host: localhost:5001
+0040: User-Agent: curl/8.22.0
+0059: Accept: */*
+0066: Content-Type: application/json
+0086: Content-Length: 73
+009a: 
+17:15:38.050485 => Send data, 73 bytes (0x49)
+0000: {"prompt":"Escribe una frase corta sobre el invierno:\n","max_le
+0040: ngth":40}
+17:15:38.059346 * upload completely sent off: 73 bytes
+17:15:38.059393 * HTTP 1.0, assume close after body
+17:15:38.059394 <= Recv header, 17 bytes (0x11)
+0000: HTTP/1.0 200 OK
+17:15:38.059424 <= Recv header, 27 bytes (0x1b)
+0000: Server: KoboldCppServer 1
+17:15:38.059432 <= Recv header, 37 bytes (0x25)
+0000: Date: Mon, 12 Oct 2026 23:15:38 GMT
+17:15:38.059436 <= Recv header, 23 bytes (0x17)
+0000: X-Accel-Buffering: no
+17:15:38.059440 <= Recv header, 25 bytes (0x19)
+0000: cache-control: no-cache
+17:15:38.059444 * HTTP/1.0 connection set to keep alive
+17:15:38.059445 <= Recv header, 24 bytes (0x18)
+0000: connection: keep-alive
+17:15:38.059448 <= Recv header, 32 bytes (0x20)
+0000: access-control-allow-origin: *
+17:15:38.059452 <= Recv header, 33 bytes (0x21)
+0000: access-control-allow-methods: *
+17:15:38.059456 <= Recv header, 228 bytes (0xe4)
+0000: access-control-allow-headers: *, Accept, Content-Type, Content-L
+0040: ength, Cache-Control, Accept-Encoding, X-CSRF-Token, Client-Agen
+0080: t, X-Fields, Content-Type, Authorization, X-Requested-With, X-HT
+00c0: TP-Method-Override, apikey, genkey
+17:15:38.059469 <= Recv header, 44 bytes (0x2c)
+0000: access-control-allow-private-network: true
+17:15:38.059473 <= Recv header, 25 bytes (0x19)
+0000: cache-control: no-store
+17:15:38.059477 <= Recv header, 33 bytes (0x21)
+0000: content-type: text/event-stream
+17:15:38.059482 <= Recv header, 2 bytes (0x2)
+0000: 
+17:15:38.567195 <= Recv data, 15 bytes (0xf)
+0000: event: message.
+17:15:38.567347 <= Recv data, 46 bytes (0x2e)
+0000: data: {"token": "El", "finish_reason": null}..
+17:15:38.628072 <= Recv data, 63 bytes (0x3f)
+0000: event: message.data: {"token": " inv", "finish_reason": null}..
+17:15:38.688650 <= Recv data, 60 bytes (0x3c)
+0000: event: message.data: {"token": "i", "finish_reason": null}..
+17:15:38.729246 <= Recv data, 15 bytes (0xf)
+0000: event: message.
+17:15:38.729295 <= Recv data, 48 bytes (0x30)
+0000: data: {"token": "erno", "finish_reason": null}..
+17:15:38.789920 <= Recv data, 64 bytes (0x40)
+0000: event: message.data: {"token": " lleg", "finish_reason": null}..
+17:15:38.830404 <= Recv data, 60 bytes (0x3c)
+0000: event: message.data: {"token": "a", "finish_reason": null}..
+17:15:38.870893 <= Recv data, 63 bytes (0x3f)
+0000: event: message.data: {"token": " con", "finish_reason": null}..
+17:15:38.931994 <= Recv data, 15 bytes (0xf)
+0000: event: message.
+17:15:38.932055 <= Recv data, 47 bytes (0x2f)
+0000: data: {"token": " su", "finish_reason": null}..
+17:15:38.993730 <= Recv data, 15 bytes (0xf)
+0000: event: message.
+17:15:38.993811 <= Recv data, 47 bytes (0x2f)
+0000: data: {"token": " fr", "finish_reason": null}..
+17:15:39.054473 <= Recv data, 15 bytes (0xf)
+0000: event: message.
+17:15:39.054525 <= Recv data, 51 bytes (0x33)
+0000: data: {"token": "\u00edo", "finish_reason": null}..
+17:15:39.115703 <= Recv data, 15 bytes (0xf)
+0000: event: message.
+17:15:39.115747 <= Recv data, 46 bytes (0x2e)
+0000: data: {"token": " y", "finish_reason": null}..
+17:15:39.176691 <= Recv data, 15 bytes (0xf)
+0000: event: message.
+17:15:39.176770 <= Recv data, 47 bytes (0x2f)
+0000: data: {"token": " su", "finish_reason": null}..
+17:15:39.237407 <= Recv data, 15 bytes (0xf)
+0000: event: message.
+17:15:39.237456 <= Recv data, 48 bytes (0x30)
+0000: data: {"token": " nie", "finish_reason": null}..
+17:15:39.318392 <= Recv data, 15 bytes (0xf)
+0000: event: message.
+17:15:39.318435 <= Recv data, 46 bytes (0x2e)
+0000: data: {"token": "ve", "finish_reason": null}..
+17:15:39.379290 <= Recv data, 15 bytes (0xf)
+0000: event: message.
+17:15:39.379330 <= Recv data, 45 bytes (0x2d)
+0000: data: {"token": ",", "finish_reason": null}..
+17:15:39.460906 <= Recv data, 15 bytes (0xf)
+0000: event: message.
+17:15:39.460985 <= Recv data, 46 bytes (0x2e)
+0000: data: {"token": " y", "finish_reason": null}..
+17:15:39.541419 <= Recv data, 15 bytes (0xf)
+0000: event: message.
+17:15:39.541469 <= Recv data, 47 bytes (0x2f)
+0000: data: {"token": " tr", "finish_reason": null}..
+17:15:39.603278 <= Recv data, 15 bytes (0xf)
+0000: event: message.
+17:15:39.603326 <= Recv data, 46 bytes (0x2e)
+0000: data: {"token": "ae", "finish_reason": null}..
+17:15:39.643795 <= Recv data, 15 bytes (0xf)
+0000: event: message.
+17:15:39.643849 <= Recv data, 49 bytes (0x31)
+0000: data: {"token": " cons", "finish_reason": null}..
+17:15:39.704536 <= Recv data, 15 bytes (0xf)
+0000: event: message.
+17:15:39.704580 <= Recv data, 47 bytes (0x2f)
+0000: data: {"token": "igo", "finish_reason": null}..
+17:15:39.765236 <= Recv data, 15 bytes (0xf)
+0000: event: message.
+17:15:39.765291 <= Recv data, 47 bytes (0x2f)
+0000: data: {"token": " un", "finish_reason": null}..
+17:15:39.806118 <= Recv data, 15 bytes (0xf)
+0000: event: message.
+17:15:39.806214 <= Recv data, 49 bytes (0x31)
+0000: data: {"token": " aire", "finish_reason": null}..
+17:15:39.866589 <= Recv data, 15 bytes (0xf)
+0000: event: message.
+17:15:39.866637 <= Recv data, 49 bytes (0x31)
+0000: data: {"token": " fres", "finish_reason": null}..
+17:15:39.927409 <= Recv data, 15 bytes (0xf)
+0000: event: message.
+17:15:39.927458 <= Recv data, 46 bytes (0x2e)
+0000: data: {"token": "co", "finish_reason": null}..
+17:15:39.988179 <= Recv data, 15 bytes (0xf)
+0000: event: message.
+17:15:39.988227 <= Recv data, 46 bytes (0x2e)
+0000: data: {"token": " y", "finish_reason": null}..
+17:15:40.049473 <= Recv data, 15 bytes (0xf)
+0000: event: message.
+17:15:40.049654 <= Recv data, 48 bytes (0x30)
+0000: data: {"token": " lim", "finish_reason": null}..
+17:15:40.089956 <= Recv data, 15 bytes (0xf)
+0000: event: message.
+17:15:40.089992 <= Recv data, 47 bytes (0x2f)
+0000: data: {"token": "pio", "finish_reason": null}..
+17:15:40.150624 <= Recv data, 15 bytes (0xf)
+0000: event: message.
+17:15:40.150667 <= Recv data, 45 bytes (0x2d)
+0000: data: {"token": ".", "finish_reason": null}..
+17:15:40.231567 <= Recv data, 15 bytes (0xf)
+0000: event: message.
+17:15:40.232145 <= Recv data, 47 bytes (0x2f)
+0000: data: {"token": "  (", "finish_reason": null}..
+17:15:40.292579 <= Recv data, 15 bytes (0xf)
+0000: event: message.
+17:15:40.292629 <= Recv data, 46 bytes (0x2e)
+0000: data: {"token": "La", "finish_reason": null}..
+17:15:40.333129 <= Recv data, 15 bytes (0xf)
+0000: event: message.
+17:15:40.334259 <= Recv data, 50 bytes (0x32)
+0000: data: {"token": " frase", "finish_reason": null}..
+17:15:40.373833 <= Recv data, 15 bytes (0xf)
+0000: event: message.
+17:15:40.373879 <= Recv data, 50 bytes (0x32)
+0000: data: {"token": " tiene", "finish_reason": null}..
+17:15:40.495203 <= Recv data, 15 bytes (0xf)
+0000: event: message.
+17:15:40.495249 <= Recv data, 47 bytes (0x2f)
+0000: data: {"token": " 15", "finish_reason": null}..
+17:15:40.535777 <= Recv data, 15 bytes (0xf)
+0000: event: message.
+17:15:40.535830 <= Recv data, 53 bytes (0x35)
+0000: data: {"token": " palabras", "finish_reason": null}..
+17:15:40.598059 <= Recv data, 15 bytes (0xf)
+0000: event: message.
+17:15:40.598126 <= Recv data, 46 bytes (0x2e)
+0000: data: {"token": " y", "finish_reason": null}..
+17:15:40.659203 <= Recv data, 15 bytes (0xf)
+0000: event: message.
+17:15:40.659283 <= Recv data, 53 bytes (0x35)
+0000: data: {"token": " describe", "finish_reason": null}..
+17:15:40.720558 <= Recv data, 15 bytes (0xf)
+0000: event: message.
+17:15:40.720612 <= Recv data, 47 bytes (0x2f)
+0000: data: {"token": " la", "finish_reason": null}..
+17:15:40.762460 <= Recv data, 15 bytes (0xf)
+0000: event: message.
+17:15:40.762561 <= Recv data, 49 bytes (0x31)
+0000: data: {"token": " sens", "finish_reason": null}..
+17:15:40.783907 <= Recv data, 15 bytes (0xf)
+0000: event: message.
+17:15:40.783961 <= Recv data, 48 bytes (0x30)
+0000: data: {"token": "", "finish_reason": "length"}..
+17:15:40.934699 <= Recv data, 0 bytes (0x0)
+17:15:40.934728 * Connection #0 to host localhost:5001 left intact

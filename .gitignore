@@ -16,3 +16,7 @@ compile_commands.json
 # Modelos GGUF (binarios grandes, no van a git)
 models/
 *.gguf
+
+# Página Swagger de koboldcpp (1.7 MB). Se regenera con:
+#   curl -s http://localhost:5001/api -o logs/api-docs.html
+logs/api-docs.html
