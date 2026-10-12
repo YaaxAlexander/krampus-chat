@@ -1,0 +1,18 @@
+# De .claude solo se versiona el plan; el resto es estado local de Claude Code
+.claude/*
+!.claude/PLAN.md
+.env
+
+# Build de CMake/Qt
+build/
+CMakeCache.txt
+CMakeFiles/
+compile_commands.json
+
+# Editores
+.vscode
+.idea
+
+# Modelos GGUF (binarios grandes, no van a git)
+models/
+*.gguf
