@@ -29,9 +29,9 @@ contestar en abstracto**. Scripts sucios, tirar a la basura después.
 
 Una ventana horrible que funciona de punta a punta. QML mínimo, cero estilo.
 
-- [ ] Scaffold del proyecto: estructura de directorios, `CMakeLists.txt` con Qt6
+- [x] Scaffold del proyecto: estructura de directorios, `CMakeLists.txt` con Qt6
       (Core, Quick, Network), build de debug con `-Wall -Wextra -fsanitize=address`
-- [ ] Verificar que `gdb ./krampus` corre y que `bt` funciona — antes de necesitarlo
+- [x] Verificar que `gdb ./krampus` corre y que `bt` funciona — antes de necesitarlo
 - [ ] `ProcessManager`: lanzar koboldcpp con QProcess, signal `ready` cuando
       el server responde, signal `failed` cuando no
 - [ ] `KoboldClient`: POST a `/api/extra/generate/stream`, parser SSE a mano
