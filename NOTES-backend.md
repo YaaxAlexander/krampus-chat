@@ -172,6 +172,14 @@ Con Ctrl-C (SIGINT) el proceso termina en menos de 5 s. El código de salida no
 es consistente (0 en una corrida, 120 en otra), así que tras pedirle que cierre
 no hay que interpretar el código como error.
 
+Con SIGTERM (lo que manda `QProcess::terminate()`) el proceso ya listo muere en
+**~260 ms**, con exit code 143, y la VRAM queda liberada. Medido el 2026-10-12.
+
+`/usr/bin/koboldcpp` es un script de shell de una línea que hace
+`exec python3 /usr/share/koboldcpp/koboldcpp.py "$@"`. Como usa `exec`, el
+intérprete de Python reemplaza al shell y conserva el mismo PID: no hay proceso
+hijo que pueda quedar huérfano al matar el PID que lanzó `QProcess`.
+
 ## Pendiente de Fase 0
 
 - [x] Captura de carga fallida por VRAM insuficiente

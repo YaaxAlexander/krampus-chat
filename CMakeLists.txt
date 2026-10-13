@@ -68,7 +68,9 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 #             plan de la Fase 1 lo necesita para KoboldClient
 #             (QNetworkAccessManager), y así un Qt sin Network instalado se
 #             detecta ahora, en el scaffold, y no a mitad de escribir el cliente.
-find_package(Qt6 REQUIRED COMPONENTS Core Quick Network)
+#   Test    : Qt Test, el framework de tests (el `unittest` de Qt). Solo lo usa
+#             el ejecutable de tests, no la app. Viene en el paquete qt6-base.
+find_package(Qt6 REQUIRED COMPONENTS Core Quick Network Test)
 
 # Configuración estándar que Qt recomienda para todo proyecto. Lo que más nos
 # importa es que activa AUTOMOC: Qt extiende C++ con cosas que el lenguaje no
@@ -83,58 +85,18 @@ find_package(Qt6 REQUIRED COMPONENTS Core Quick Network)
 # warnings. 6.8 es una versión LTS; Arch trae una más nueva.
 qt_standard_project_setup(REQUIRES 6.8)
 
-# --- El ejecutable -----------------------------------------------------------
-# Declara el ejecutable `krampus` y los .cpp que lo forman. Usamos
-# `qt_add_executable` en vez del `add_executable` normal de CMake porque el de Qt
-# añade los pasos extra que una app Qt necesita (entre otros, registrar plugins).
-#
-# Solo se listan los .cpp: los headers (.h) no se compilan por separado, se
-# "pegan" dentro de cada .cpp que hace #include de ellos.
-qt_add_executable(krampus
-    src/main.cpp
-)
-
-# --- El módulo QML -----------------------------------------------------------
-# Empaqueta los archivos .qml DENTRO del ejecutable, como un módulo QML llamado
-# `Krampus` (el URI es el nombre con el que se importa: `import Krampus`).
-#
-# Por qué dentro del ejecutable y no leyéndolos del disco en runtime: así el
-# binario es autocontenido (no hay una ruta a los .qml que se rompa al
-# instalarlo), y de paso Qt compila el QML por adelantado y lo revisa al
-# compilar, con lo que varios errores salen en el build y no al abrir la ventana.
-#
-# Esta es la forma moderna (Qt 6.2+). La alternativa antigua era escribir a mano
-# un archivo .qrc con la lista de recursos y cargar `qrc:/main.qml` por URL;
-# funciona, pero es un archivo más que mantener y no da la revisión en build.
-#
-# Cada .qml nuevo hay que añadirlo a QML_FILES; no se detectan solos.
-qt_add_qml_module(krampus
-    URI Krampus
-    VERSION 1.0
-    QML_FILES
-        src/ui/Main.qml
-)
-
-# --- Librerías ---------------------------------------------------------------
-# Enlaza el ejecutable con las librerías de Qt. Los nombres `Qt6::Core` etc. son
-# "targets importados": además de la librería en sí, traen consigo las rutas de
-# sus headers, así que no hay que configurar rutas de #include a mano.
-#
-# PRIVATE = estas dependencias son solo para compilar `krampus`. Las otras
-# opciones (PUBLIC / INTERFACE) solo importan cuando lo que se construye es una
-# librería que otros van a usar, que no es nuestro caso.
-target_link_libraries(krampus PRIVATE
-    Qt6::Core
-    Qt6::Quick
-    Qt6::Network
-)
-
 # --- Warnings ----------------------------------------------------------------
 # -Wall -Wextra activan la mayoría de los avisos del compilador (variables sin
 # usar, comparaciones sospechosas, etc.). Van SIEMPRE, también en Release: un
 # warning en C++ suele ser un bug real que en Python habría sido una excepción
 # en runtime. La meta es compilar con cero warnings.
-target_compile_options(krampus PRIVATE -Wall -Wextra)
+#
+# `add_compile_options` (sin `target_`) aplica los flags a TODOS los targets que
+# se declaren de aquí para abajo en este archivo: la app y los tests. Por eso esta sección va ANTES de declararlos; puesta al final
+# no afectaría a ninguno. La alternativa, `target_compile_options(<target> ...)`,
+# obliga a repetir los flags por cada target, y es fácil olvidarse de uno y
+# terminar con el mismo código compilado de dos formas distintas.
+add_compile_options(-Wall -Wextra)
 
 # --- AddressSanitizer (solo en Debug) ----------------------------------------
 # En C++ la memoria se maneja a mano, y usarla mal (leer algo ya liberado,
@@ -159,13 +121,129 @@ target_compile_options(krampus PRIVATE -Wall -Wextra)
 # al enlazar (para añadir la librería de ASan, libasan). Si falta el segundo, el
 # enlace falla con cientos de "undefined reference to __asan_...".
 #
+# Igual que los warnings, se aplica a todos los targets de más abajo. Aquí
+# importa todavía más: mezclar en un mismo ejecutable código instrumentado con
+# código sin instrumentar hace que ASan se pierda errores o reporte falsos.
+#
 # Los símbolos de debug (-g, lo que deja a gdb mostrar nombres de funciones y
 # números de línea) no se añaden aquí porque CMake ya los pone él solo en todo
 # build Debug.
-target_compile_options(krampus PRIVATE
+add_compile_options(
     $<$<CONFIG:Debug>:-fsanitize=address>
     $<$<CONFIG:Debug>:-fno-omit-frame-pointer>
 )
-target_link_options(krampus PRIVATE
+add_link_options(
     $<$<CONFIG:Debug>:-fsanitize=address>
 )
+
+# --- El ejecutable -----------------------------------------------------------
+# Declara el ejecutable `krampus` y los .cpp que lo forman. Usamos
+# `qt_add_executable` en vez del `add_executable` normal de CMake porque el de Qt
+# añade los pasos extra que una app Qt necesita (entre otros, registrar plugins).
+#
+# Solo se listan los .cpp: los headers (.h) no se compilan por separado, se
+# "pegan" dentro de cada .cpp que hace #include de ellos.
+#
+# La excepción es ProcessManager.h: se lista porque tiene una clase con Q_OBJECT
+# y AUTOMOC necesita saber que existe para correr `moc` sobre él.
+qt_add_executable(krampus
+    src/main.cpp
+    src/backend/ProcessManager.h
+    src/backend/ProcessManager.cpp
+)
+
+# Carpeta donde buscar nuestros headers, para poder escribir
+# `#include "ProcessManager.h"` sin la ruta completa. Hace falta sobre todo por
+# el código que Qt GENERA para registrar ProcessManager en QML (ver el módulo QML
+# abajo): ese código vive en build/ e incluye el header solo por su nombre.
+target_include_directories(krampus PRIVATE src/backend)
+
+# --- El módulo QML -----------------------------------------------------------
+# Empaqueta los archivos .qml DENTRO del ejecutable, como un módulo QML llamado
+# `Krampus` (el URI es el nombre con el que se importa: `import Krampus`).
+#
+# Por qué dentro del ejecutable y no leyéndolos del disco en runtime: así el
+# binario es autocontenido (no hay una ruta a los .qml que se rompa al
+# instalarlo), y de paso Qt compila el QML por adelantado y lo revisa al
+# compilar, con lo que varios errores salen en el build y no al abrir la ventana.
+#
+# Esta es la forma moderna (Qt 6.2+). La alternativa antigua era escribir a mano
+# un archivo .qrc con la lista de recursos y cargar `qrc:/main.qml` por URL;
+# funciona, pero es un archivo más que mantener y no da la revisión en build.
+#
+# Cada .qml nuevo hay que añadirlo a QML_FILES; no se detectan solos.
+#
+# Los tipos de C++ también entran al módulo por aquí, aunque no se listen: Qt
+# revisa los fuentes del target `krampus` y registra como tipo de QML toda clase
+# marcada con QML_ELEMENT (hoy, ProcessManager). Por eso Main.qml puede escribir
+# `ProcessManager { }` sin ningún código de registro en main.cpp.
+qt_add_qml_module(krampus
+    URI Krampus
+    VERSION 1.0
+    QML_FILES
+        src/ui/Main.qml
+)
+
+# --- Librerías ---------------------------------------------------------------
+# Enlaza el ejecutable con las librerías de Qt. Los nombres `Qt6::Core` etc. son
+# "targets importados": además de la librería en sí, traen consigo las rutas de
+# sus headers, así que no hay que configurar rutas de #include a mano.
+#
+# PRIVATE = estas dependencias son solo para compilar `krampus`. Las otras
+# opciones (PUBLIC / INTERFACE) solo importan cuando lo que se construye es una
+# librería que otros van a usar, que no es nuestro caso.
+target_link_libraries(krampus PRIVATE
+    Qt6::Core
+    Qt6::Quick
+    Qt6::Network
+)
+
+# --- Tests -------------------------------------------------------------------
+# enable_testing() activa CTest, el lanzador de tests de CMake. Se corren con:
+#   ctest --test-dir build --output-on-failure
+enable_testing()
+
+# Los tests son un ejecutable aparte, con su propio main() (lo escribe el macro
+# QTEST_GUILESS_MAIN). Se compila siempre junto con la app: es poco código y
+# así no se puede romper sin que el build lo note.
+#
+# El test compila ProcessManager.cpp OTRA VEZ, dentro de su propio ejecutable.
+# La alternativa habitual es sacar el backend a una librería estática (código
+# compilado una sola vez, que se pega en la app y en los tests). Se probó y se
+# descartó por ahora: el registro automático de QML_ELEMENT solo mira los
+# fuentes del target que tiene el módulo QML (`krampus`), y hacer que también
+# vea los de una librería aparte pide un mecanismo extra de Qt
+# (qt_generate_foreign_qml_types, o un segundo módulo QML con su plugin) más
+# enredado que compilar dos veces un archivo. Las dos compilaciones usan los
+# mismos flags, porque los warnings y ASan están puestos para todo el archivo.
+# Cuando el backend tenga varios .cpp convendrá volver a mirarlo.
+qt_add_executable(tst_processmanager
+    tests/tst_processmanager.cpp
+    src/backend/ProcessManager.h
+    src/backend/ProcessManager.cpp
+)
+
+target_include_directories(tst_processmanager PRIVATE src/backend)
+
+# Qt6::QmlIntegration es una librería solo de headers, sin código: aporta el
+# macro QML_ELEMENT que usa ProcessManager.h y nada más. NO arrastra el motor de
+# QML: en el test ese macro queda como una anotación que nadie lee. (La app no
+# la nombra porque Qt6::Quick ya la trae consigo.)
+target_link_libraries(tst_processmanager PRIVATE
+    Qt6::Core
+    Qt6::QmlIntegration
+    Qt6::Test
+)
+
+# Define el macro KRAMPUS_SOURCE_DIR dentro del código del test, con la ruta
+# absoluta del repo entre comillas (equivale a escribir en el .cpp
+# `#define KRAMPUS_SOURCE_DIR "/home/.../krampus-chat"`). El test la usa para
+# encontrar tests/fake-koboldcpp.sh, que NO se copia a build/: se usa desde
+# donde está.
+target_compile_definitions(tst_processmanager PRIVATE
+    KRAMPUS_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
+)
+
+# Le cuenta a CTest que existe un test llamado `processmanager` y que correrlo
+# es ejecutar ese programa; si el programa devuelve 0, el test pasó.
+add_test(NAME processmanager COMMAND tst_processmanager)
