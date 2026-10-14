@@ -1,6 +1,6 @@
 // Main.qml — la ventana principal de Krampus. Fea a propósito: por ahora
 // permite cargar un modelo, ver en qué estado está koboldcpp, detenerlo, y
-// mandarle un prompt para ver la respuesta aparecer token por token.
+// conversar con el modelo viendo cada respuesta aparecer token por token.
 //
 // QML es un lenguaje declarativo: aquí no se escriben pasos ("crea una ventana,
 // luego ponle un texto"), se describe el árbol de objetos que debe existir y Qt
@@ -58,6 +58,31 @@ ApplicationWindow {
         id: processManager
     }
 
+    // --- La conversación ---
+    //
+    // El historial de la sesión: un arreglo de JavaScript con un objeto por
+    // mensaje, `{role: "user" | "assistant", content: "texto"}`, en orden. Es
+    // exactamente lo que se le pasa entero a koboldClient.generate() en cada
+    // envío: el cliente de C++ no recuerda nada entre llamadas, y el servidor
+    // tampoco. Si el modelo "se acuerda" de lo anterior es porque se lo
+    // volvemos a mandar todo cada vez.
+    //
+    // Vive aquí, en QML, porque por ahora es solo estado de la ventana. Se
+    // pierde al cerrar Krampus: guardarlo en disco es de la Fase 3. Tampoco hay
+    // mensaje de sistema todavía.
+    //
+    // `property var` = una propiedad que guarda cualquier valor de JavaScript.
+    // Ojo: modificar el arreglo por dentro (push, pop) NO avisa a nadie, solo
+    // asignarle uno nuevo lo hace. Por eso ningún binding depende de él: lo
+    // que se ve en pantalla se actualiza a mano (ver renderConversation).
+    property var conversation: []
+
+    // El texto de la respuesta que está llegando, token a token. Al terminar
+    // bien se guarda en `conversation` como mensaje del asistente. Hace falta
+    // aparte del área de texto porque esa mezcla la conversación entera con
+    // los "Tú:" / "Modelo:" de adorno.
+    property string pendingReply: ""
+
     // El objeto de C++ que habla por HTTP con koboldcpp (ver
     // src/backend/KoboldClient.h). Mismo ownership que el de arriba.
     KoboldClient {
@@ -73,30 +98,133 @@ ApplicationWindow {
         // La forma `function(token) { }` le pone nombre al argumento de la
         // signal para poder usarlo adentro.
         onTokenReceived: function(token) {
+            window.pendingReply += token
             // insert(posición, texto) con la posición del final AGREGA el
             // token a lo que ya había. La alternativa obvia,
             // `outputArea.text += token`, arma el texto completo de nuevo por
-            // cada token y obliga a redibujarlo entero: con respuestas largas
-            // el trabajo crece con el cuadrado del largo.
+            // cada token y obliga a redibujarlo entero: con conversaciones
+            // largas el trabajo crece con el cuadrado del largo.
             outputArea.insert(outputArea.length, token)
             // Mover el cursor al final hace que la vista siga al texto nuevo.
             outputArea.cursorPosition = outputArea.length
         }
+
+        // La respuesta terminó bien: pasa al historial. Así el próximo envío
+        // la incluye y la conversación sigue alternando usuario / asistente.
+        // En pantalla no hay nada que hacer: ya se fue mostrando token a token.
+        //
+        // No se mira el motivo (`finishReason`): aunque sea "length" (cortada
+        // por el máximo de tokens), lo que llegó es lo que el modelo dijo, y
+        // es lo que tiene que ver en el siguiente turno.
+        onGenerationFinished: {
+            window.conversation.push({ role: "assistant", content: window.pendingReply })
+            window.pendingReply = ""
+        }
+
+        // La generación falló (servidor caído, error HTTP, corte a mitad...).
+        //
+        // Decisión: el turno fallido se DESHACE entero. El mensaje del usuario
+        // sale del historial y vuelve al campo de texto, listo para reenviarlo
+        // con Enter; lo que hubiera llegado de la respuesta se descarta.
+        //
+        // Por qué: si el mensaje del usuario se quedara en el historial sin
+        // respuesta, el siguiente envío mandaría dos mensajes de usuario
+        // seguidos, y muchas plantillas de chat esperan que alternen. La
+        // alternativa de guardar la respuesta a medias como si fuera del
+        // asistente es peor: el modelo vería en el historial un texto cortado
+        // como si lo hubiera dicho así. El motivo del fallo queda a la vista en
+        // la etiqueta de error, debajo del campo de texto.
+        //
+        // También corre si generate() falla en el momento (por ejemplo, con
+        // la dirección mal escrita), antes de mandar nada: el caso es el mismo.
+        onGenerationFailed: {
+            // El último mensaje siempre es el del usuario que se acaba de
+            // mandar (sendMessage lo agrega justo antes de llamar a generate).
+            // Se comprueba igual, para no borrar nunca una respuesta del
+            // asistente por error. `length - 1` = el último índice.
+            const lastIndex = window.conversation.length - 1
+            if (lastIndex >= 0 && window.conversation[lastIndex].role === "user") {
+                // pop() quita el último elemento y lo devuelve.
+                const failedMessage = window.conversation.pop()
+                promptField.text = failedMessage.content
+            }
+            window.pendingReply = ""
+            window.renderConversation()
+        }
     }
 
-    // Manda el prompt escrito. Es una función de JavaScript definida dentro de
-    // la ventana; existe porque hay dos formas de enviar (el botón y la tecla
-    // Enter) y las dos tienen que hacer exactamente lo mismo.
-    function sendPrompt() {
+    // El nombre con el que se muestra cada rol en la conversación.
+    function speakerLabel(role) {
+        if (role === "user") {
+            return "Tú: "
+        }
+        if (role === "assistant") {
+            return "Modelo: "
+        }
+        // No debería pasar: el historial solo tiene esos dos roles.
+        return role + ": "
+    }
+
+    // Vuelve a escribir el área de texto entera a partir del historial. Se usa
+    // solo cuando el historial cambia de golpe (un turno fallido que se
+    // deshace, o una conversación nueva). Mientras llega una respuesta NO se
+    // usa: ahí se agrega token a token (ver onTokenReceived).
+    function renderConversation() {
+        // `let` declara una variable que solo existe dentro de este bloque,
+        // como una variable local de Python. (La palabra vieja de JavaScript,
+        // `var`, tiene reglas de alcance más raras: no se usa.)
+        let text = ""
+        for (let i = 0; i < window.conversation.length; i++) {
+            if (i > 0) {
+                text += "\n\n"
+            }
+            const message = window.conversation[i]
+            text += window.speakerLabel(message.role) + message.content
+        }
+        outputArea.text = text
+        outputArea.cursorPosition = outputArea.length
+    }
+
+    // Manda el mensaje escrito, junto con todo el historial. Es una función de
+    // JavaScript definida dentro de la ventana; existe porque hay dos formas
+    // de enviar (el botón y la tecla Enter) y las dos tienen que hacer
+    // exactamente lo mismo.
+    function sendMessage() {
         // Enter llega aquí aunque el botón esté deshabilitado, así que se
         // comprueba lo mismo que el botón.
         if (!sendButton.enabled) {
             return
         }
-        // Cada envío empieza con la salida vacía: no es un chat todavía, cada
-        // prompt es independiente del anterior.
+        // `const` = una variable que no se vuelve a asignar.
+        const text = promptField.text
+        window.conversation.push({ role: "user", content: text })
+        // Se vacía ANTES de llamar a generate(): si la generación falla en el
+        // momento, onGenerationFailed devuelve el texto al campo, y ese
+        // retorno no debe pisarse después.
+        promptField.clear()
+
+        // En pantalla: el mensaje del usuario y el comienzo de la respuesta,
+        // que irá creciendo con cada token.
+        if (outputArea.length > 0) {
+            outputArea.insert(outputArea.length, "\n\n")
+        }
+        outputArea.insert(outputArea.length,
+                          window.speakerLabel("user") + text + "\n\n" + window.speakerLabel("assistant"))
+        outputArea.cursorPosition = outputArea.length
+
+        window.pendingReply = ""
+        // El arreglo de JavaScript llega a C++ como una QVariantList (ver
+        // KoboldClient.h).
+        koboldClient.generate(window.conversation)
+    }
+
+    // Empieza de cero: olvida el historial y limpia la pantalla. El modelo
+    // cargado sigue cargado; solo se olvida lo conversado.
+    function newConversation() {
+        // Aquí sí se asigna un arreglo nuevo, en vez de vaciar el viejo.
+        window.conversation = []
+        window.pendingReply = ""
         outputArea.clear()
-        koboldClient.generate(promptField.text)
     }
 
     // ColumnLayout apila a sus hijos de arriba hacia abajo. La alternativa,
@@ -250,7 +378,7 @@ ApplicationWindow {
             wrapMode: Text.Wrap
         }
 
-        // Fila del prompt: texto + botón.
+        // Fila del mensaje: texto + botones.
         RowLayout {
             Layout.fillWidth: true
             spacing: 8
@@ -258,12 +386,14 @@ ApplicationWindow {
             TextField {
                 id: promptField
                 Layout.fillWidth: true
-                placeholderText: "Prompt (se manda tal cual, sin formato de chat)"
-                // Mientras se genera no se edita: el prompt a la vista es el
-                // que produjo la respuesta que está llegando.
+                placeholderText: "Escribe un mensaje"
+                // Mientras se genera no se edita. Además, si la generación
+                // falla, el mensaje vuelve a este campo (ver
+                // onGenerationFailed), y no debe encontrarse con otro texto
+                // escrito mientras tanto.
                 enabled: !koboldClient.generating
                 // `accepted` se emite al apretar Enter dentro del campo.
-                onAccepted: window.sendPrompt()
+                onAccepted: window.sendMessage()
             }
 
             Button {
@@ -274,7 +404,16 @@ ApplicationWindow {
                 enabled: processManager.state === ProcessManager.Ready
                          && !koboldClient.generating
                          && promptField.text.length > 0
-                onClicked: window.sendPrompt()
+                onClicked: window.sendMessage()
+            }
+
+            Button {
+                text: "Nueva conversación"
+                // Deshabilitado mientras genera: borrar el historial con una
+                // respuesta en camino dejaría esa respuesta llegando a una
+                // conversación que ya no existe.
+                enabled: !koboldClient.generating
+                onClicked: window.newConversation()
             }
         }
 
@@ -289,11 +428,13 @@ ApplicationWindow {
         }
 
         Label {
-            text: "Respuesta:"
+            text: "Conversación:"
         }
 
-        // El texto generado, sin formato. Los tokens se agregan al final desde
-        // el handler `onTokenReceived` de más arriba.
+        // La conversación entera, en texto plano: "Tú: ..." / "Modelo: ...".
+        // Los tokens de la respuesta en curso se agregan al final desde el
+        // handler `onTokenReceived` de más arriba. Burbujas y markdown son de
+        // la Fase 4.
         ScrollView {
             Layout.fillWidth: true
             Layout.fillHeight: true
@@ -309,7 +450,7 @@ ApplicationWindow {
                 readOnly: true
                 wrapMode: TextEdit.Wrap
                 // Sin esto el área interpretaría como formato un texto que
-                // parezca HTML; la respuesta del modelo se muestra literal.
+                // parezca HTML; los mensajes se muestran literales.
                 textFormat: TextEdit.PlainText
             }
         }

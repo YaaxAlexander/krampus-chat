@@ -1,39 +1,115 @@
 // KoboldClient.cpp — el código de los métodos declarados en KoboldClient.h.
 //
 // La forma de la petición y de la respuesta sale de mediciones reales contra
-// koboldcpp: ver NOTES-backend.md ("Stream SSE") y logs/sse-trace.txt.
+// koboldcpp: ver NOTES-backend.md ("Endpoint de chat"), logs/chat-sse-raw.txt
+// y logs/chat-sse-trace.txt.
 
 // Un .cpp siempre incluye su propio header.
 #include "KoboldClient.h"
 
 #include <QDebug>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonParseError>
 #include <QJsonValue>
+#include <QMetaType>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QUrl>
+#include <QVariantMap>
 
 // Constantes de este archivo. `const` = no se pueden modificar. Van aquí y no
 // en el header porque nadie fuera de este .cpp las necesita.
 
-// La ruta del endpoint de generación con streaming (ver CLAUDE.md, "Endpoints
-// de koboldcpp"). Se le antepone la URL base.
-const QString GENERATE_STREAM_PATH = "/api/extra/generate/stream";
+// La ruta del endpoint de chat con streaming (ver CLAUDE.md, "Endpoints de
+// koboldcpp"). Se le antepone la URL base. Es la ruta "estilo OpenAI": no
+// lleva el prefijo /api de los endpoints propios de koboldcpp.
+const QString CHAT_COMPLETIONS_PATH = "/v1/chat/completions";
 
-// Máximo de tokens que se le pide generar al servidor por cada prompt. Fijo por
-// ahora y definido solo aquí; los controles de generación son de la Fase 3.
+// Máximo de tokens que se le pide generar al servidor por cada respuesta. Fijo
+// por ahora y definido solo aquí; los controles de generación son de la Fase 3.
 // 200 tokens son unas 150 palabras: alcanza para ver el streaming un buen rato
 // (unos 11 s a los ~18 tokens por segundo medidos) sin que una prueba se
-// eternice, porque todavía no hay botón para cancelar.
-const int MAX_LENGTH_TOKENS = 200;
+// eternice, porque todavía no hay botón para cancelar. Con el endpoint de chat
+// el modelo suele terminar antes por su cuenta (finish_reason "stop").
+const int MAX_TOKENS = 200;
+
+// El texto exacto con el que el endpoint de chat cierra el stream, en una
+// línea `data:` propia. No es JSON.
+const QByteArray DONE_MARKER = "[DONE]";
 
 // Cuántos bytes del cuerpo de una respuesta de error se copian al mensaje. El
 // cuerpo suele explicar el problema (koboldcpp manda un JSON corto con el
 // motivo), pero no se quiere volcar una página entera en la ventana.
 const int MAX_ERROR_BODY_BYTES = 300;
+
+// Revisa la lista de mensajes que llegó de QML y la convierte en el arreglo
+// JSON que espera el servidor. Devuelve un mensaje de error para el usuario si
+// algo no tiene la forma esperada, o un string vacío si todo está bien.
+//
+// Es una función suelta, no un método de KoboldClient: no usa nada del objeto.
+// Como solo se usa en este archivo, tampoco aparece en el header. El `static`
+// delante dice justamente eso: "esta función es privada de este .cpp". Sin él,
+// otro .cpp del programa con una función del mismo nombre chocaría con esta al
+// enlazar. (Las constantes `const` de arriba ya son privadas del archivo sin
+// pedirlo: es una regla de C++ para ellas.)
+//
+// Devuelve DOS cosas: el error (con `return`) y el arreglo (por el segundo
+// parámetro). `QJsonArray& jsonMessages`, referencia SIN const, quiere decir
+// "la variable del que llama, para escribir en ella". En Python se devolvería
+// una tupla `(error, arreglo)`; esta es la forma habitual en C++ sin inventar
+// un struct para la ocasión.
+//
+// Se valida lo mínimo: que haya algún mensaje, y que cada uno tenga `role` y
+// `content` de texto. Qué roles valen y en qué orden lo decide koboldcpp; si
+// algo no le gusta, responde con un error HTTP que ya se muestra entero.
+static QString messagesToJson(const QVariantList& messages, QJsonArray& jsonMessages)
+{
+    if (messages.isEmpty()) {
+        return "No hay ningún mensaje que mandar: la conversación está vacía.";
+    }
+
+    for (qsizetype i = 0; i < messages.size(); i++) {
+        const QVariant& message = messages.at(i);
+        // Para el usuario los mensajes se cuentan desde 1, no desde 0.
+        qsizetype number = i + 1;
+
+        // typeId() dice qué tipo de valor hay dentro de la caja. Un objeto de
+        // JavaScript (`{role: ..., content: ...}`) llega como QVariantMap; si
+        // es otra cosa (un número, un string suelto) no es un mensaje.
+        if (message.typeId() != QMetaType::QVariantMap) {
+            return QString("El mensaje %1 de la conversación no tiene la forma "
+                           "{role, content}.")
+                .arg(number);
+        }
+        QVariantMap map = message.toMap();
+
+        // value(clave) devuelve una caja vacía si la clave no está, y una caja
+        // vacía no es un QString: el mismo control cubre "falta" y "no es
+        // texto".
+        QVariant role = map.value("role");
+        QVariant content = map.value("content");
+        if (role.typeId() != QMetaType::QString || role.toString().isEmpty()) {
+            return QString("Al mensaje %1 de la conversación le falta el rol "
+                           "(\"user\", \"assistant\"...).")
+                .arg(number);
+        }
+        if (content.typeId() != QMetaType::QString) {
+            return QString("Al mensaje %1 de la conversación le falta el texto.").arg(number);
+        }
+
+        // Se copian SOLO las dos claves conocidas: si desde QML llegara algo
+        // más, no viaja al servidor sin que nadie lo haya decidido.
+        QJsonObject jsonMessage;
+        jsonMessage.insert("role", role.toString());
+        jsonMessage.insert("content", content.toString());
+        jsonMessages.append(jsonMessage);
+    }
+
+    return QString();
+}
 
 // `KoboldClient::KoboldClient` = el constructor de la clase KoboldClient. Lo
 // que va tras los dos puntos es la "lista de inicialización": `QObject(parent)`
@@ -116,7 +192,7 @@ void KoboldClient::setBaseUrl(const QString& url)
     emit baseUrlChanged();
 }
 
-void KoboldClient::generate(const QString& prompt)
+void KoboldClient::generate(const QVariantList& messages)
 {
     // Una generación a la vez. koboldcpp atiende de a una, y con dos respuestas
     // llegando juntas no se sabría de cuál es cada token.
@@ -135,7 +211,7 @@ void KoboldClient::generate(const QString& prompt)
         base.chop(1);
     }
     // QUrl interpreta el texto y lo separa en esquema, máquina, puerto y ruta.
-    QUrl url(base + GENERATE_STREAM_PATH);
+    QUrl url(base + CHAT_COMPLETIONS_PATH);
     if (base.isEmpty() || !url.isValid() || url.host().isEmpty()) {
         fail(QString("La dirección del servidor no es válida: «%1». Debe tener la "
                      "forma http://máquina:puerto.")
@@ -143,12 +219,36 @@ void KoboldClient::generate(const QString& prompt)
         return;
     }
 
-    // El cuerpo de la petición: un objeto JSON. QJsonObject es el `dict` y
-    // QJsonDocument hace el trabajo de `json.dumps()`. Compact = en una sola
-    // línea, sin espacios de adorno. toJson() devuelve bytes en UTF-8.
+    // Los mensajes, ya revisados y en formato JSON. Si algo está mal se falla
+    // aquí, antes de abrir ninguna conexión: mandar basura solo cambiaría un
+    // error claro por uno HTTP más difícil de entender.
+    QJsonArray jsonMessages;
+    QString messagesError = messagesToJson(messages, jsonMessages);
+    if (!messagesError.isEmpty()) {
+        fail(messagesError);
+        return;
+    }
+
+    // El cuerpo de la petición: un objeto JSON. QJsonObject es el `dict`,
+    // QJsonArray la `list`, y QJsonDocument hace el trabajo de `json.dumps()`.
+    // Compact = en una sola línea, sin espacios de adorno. toJson() devuelve
+    // bytes en UTF-8; los acentos y emoji del texto viajan tal cual.
+    //
+    //     {"messages": [{"role": "user", "content": "..."}, ...],
+    //      "max_tokens": 200, "stream": true}
+    //
+    // `stream: true` es lo que pide la respuesta token por token, como SSE. Sin
+    // él, el servidor manda un solo JSON con la respuesta entera al final.
+    //
+    // PENDIENTE (Fase 3): los samplers van en este mismo objeto. koboldcpp los
+    // acepta con sus nombres nativos (`temperature`, `top_p`, `top_k`, `min_p`,
+    // `rep_pen`) aunque el endpoint sea el de estilo OpenAI: ver NOTES-backend.md,
+    // "Endpoint de chat". Mientras no estén, el servidor usa sus valores por
+    // defecto.
     QJsonObject body;
-    body.insert("prompt", prompt);
-    body.insert("max_length", MAX_LENGTH_TOKENS);
+    body.insert("messages", jsonMessages);
+    body.insert("max_tokens", MAX_TOKENS);
+    body.insert("stream", true);
     QByteArray bodyBytes = QJsonDocument(body).toJson(QJsonDocument::Compact);
 
     QNetworkRequest request(url);
@@ -157,8 +257,9 @@ void KoboldClient::generate(const QString& prompt)
     request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
 
     // No se pone ningún tiempo límite a la petición, a propósito: antes del
-    // primer token el servidor procesa el prompt entero, y con un prompt largo
-    // en una GPU chica eso puede tardar mucho sin que nada esté mal.
+    // primer token el servidor procesa la conversación entera, y con un
+    // historial largo en una GPU chica eso puede tardar mucho sin que nada esté
+    // mal.
 
     // Un stream nuevo: que el parser no arrastre restos del anterior.
     m_parser.reset();
@@ -226,11 +327,18 @@ void KoboldClient::processAvailableData()
         handleEvent(event);
 
         // handleEvent puede haber TERMINADO la generación: porque el evento
-        // traía el motivo de fin, o porque su JSON era inválido. En ese caso
-        // m_reply ya no es la respuesta con la que entramos (quedó en nullptr;
-        // o apunta a una nueva, si quien escuchó el aviso de fin llamó a
-        // generate() ahí mismo). Los eventos que quedaran en la lista son de
-        // una generación que ya no existe: no se procesan.
+        // traía el motivo de fin (o era `[DONE]`), o porque su JSON era
+        // inválido. En ese caso m_reply ya no es la respuesta con la que
+        // entramos (quedó en nullptr; o apunta a una nueva, si quien escuchó
+        // el aviso de fin llamó a generate() ahí mismo). Los eventos que
+        // quedaran en la lista son de una generación que ya no existe: no se
+        // procesan.
+        //
+        // Este es uno de los dos lugares que evitan avisar dos veces del fin:
+        // si el evento con `finish_reason` y el `[DONE]` llegan en la misma
+        // lectura, el `[DONE]` queda en la lista y aquí se descarta. (El otro
+        // lugar es releaseReply(): si llega en una lectura posterior, ya no
+        // hay nadie conectado para leerla.)
         if (m_reply != reply) {
             return;
         }
@@ -242,13 +350,57 @@ void KoboldClient::processAvailableData()
     }
 }
 
+// --- Cómo termina una generación: `finish_reason` y `[DONE]` ---
+//
+// El endpoint de chat marca el final DOS veces, y en el log real llegan las
+// dos, una detrás de la otra:
+//
+//     data: {..., "choices": [{"finish_reason": "stop", "delta": {"content": ""}}]}
+//     data: [DONE]
+//
+// Lo que cierra la generación es el `finish_reason`. Razones:
+//   - Trae el MOTIVO ("stop" o "length"), que es lo que se le pasa a
+//     generationFinished. `[DONE]` no dice nada más que "se acabó".
+//   - Llega primero. Esperar al `[DONE]` no aporta nada y deja la generación
+//     abierta un evento más, a merced de que ese evento llegue.
+//   - Es la misma marca que usaba el endpoint nativo: el resto del flujo
+//     (soltar la respuesta y avisar) no cambió con la migración.
+//
+// Una vez cerrada, la respuesta se suelta y el `[DONE]` que viene detrás nunca
+// se lee (ver processAvailableData y releaseReply): no hay doble aviso ni error.
+//
+// Los casos raros, para que el final sea siempre uno y uno solo:
+//   - `[DONE]` sin `finish_reason` antes: el servidor dijo explícitamente que
+//     terminó, así que es un final BUENO, con motivo vacío. No es un corte: la
+//     conexión no se cayó, el servidor cerró el stream a propósito. Se deja
+//     constancia en el log porque koboldcpp, medido, no hace eso.
+//   - La conexión se cierra sin ninguna de las dos marcas: error de "corte a
+//     mitad" (ver onFinished). Sin una marca no hay forma de saber si el texto
+//     está completo.
+//
+// Alternativa descartada: cerrar con `[DONE]` y solo anotar el motivo al ver
+// `finish_reason`. Funciona igual cuando llegan las dos, pero hace depender el
+// final de la marca que no trae información, y deja dos caminos para el caso
+// común en vez de uno.
 void KoboldClient::handleEvent(const SseEvent& event)
 {
-    // koboldcpp solo manda eventos de tipo "message" (vacío significa lo mismo
-    // según el estándar SSE). Uno de otro tipo no sabríamos interpretarlo, así
-    // que se salta, dejando constancia en el log.
-    if (!event.type.isEmpty() && event.type != "message") {
+    // El endpoint de chat no manda línea `event:`, y para esos eventos el
+    // parser ya pone "message" (lo que dice el estándar SSE). Uno de otro tipo
+    // no sabríamos interpretarlo, así que se salta, dejando constancia en el
+    // log.
+    if (event.type != "message") {
         qWarning() << "KoboldClient: evento SSE de tipo desconocido, se ignora:" << event.type;
+        return;
+    }
+
+    // `[DONE]` no es JSON: hay que reconocerlo ANTES de intentar interpretarlo,
+    // o se tomaría por un evento roto. Si se llega aquí es que todavía no hubo
+    // `finish_reason` (si no, la generación ya estaría cerrada y este evento
+    // no se habría procesado): ver el caso raro explicado arriba.
+    if (event.data == DONE_MARKER) {
+        qWarning() << "KoboldClient: el servidor cerró el stream con [DONE] sin "
+                      "dar un finish_reason; se da por terminado sin motivo.";
+        finish(QString());
         return;
     }
 
@@ -272,43 +424,66 @@ void KoboldClient::handleEvent(const SseEvent& event)
     }
     QJsonObject object = document.object();
 
-    // value("token") busca la clave; si no existe o no es un string, toString()
-    // devuelve un string vacío, como `obj.get("token", "")`.
-    QString token = object.value("token").toString();
-    // El último evento del stream trae el token vacío (está medido): no hay
-    // nada que avisar.
+    // Lo que importa está anidado así (el resto, `id`, `model`, etc., se
+    // ignora):
+    //
+    //     {"choices": [{"finish_reason": null, "delta": {"content": "El"}}]}
+    //
+    // `choices` es una lista porque la API de OpenAI permite pedir varias
+    // respuestas a la vez; Krampus pide una, así que solo mira la primera.
+    //
+    // Cada paso usa la forma "tolerante" de Qt: value() de una clave que no
+    // está, o toArray()/toObject() sobre algo que no es lista u objeto,
+    // devuelven uno VACÍO en vez de fallar, como encadenar `.get(clave, {})` en
+    // Python. Así un evento sin `choices`, o con la lista vacía, simplemente
+    // no trae nada: no es un error, se ignora.
+    QJsonArray choices = object.value("choices").toArray();
+    if (choices.isEmpty()) {
+        return;
+    }
+    QJsonObject choice = choices.at(0).toObject();
+    QJsonObject delta = choice.value("delta").toObject();
+
+    // toString() da un string vacío si `content` no está, si vale null o si no
+    // es texto: en todos esos casos no hay nada que avisar. El evento final
+    // trae el `content` vacío (está medido), y otros servidores de este estilo
+    // mandan un primer delta con solo el `role`.
+    QString token = delta.value("content").toString();
     if (!token.isEmpty()) {
         emit tokenReceived(token);
     }
 
-    // `finish_reason` vale null en todos los eventos menos el último.
+    // `finish_reason` vale null en todos los eventos menos el que cierra.
     // isUndefined() cubre el caso de que la clave directamente no esté.
-    QJsonValue finishReason = object.value("finish_reason");
+    QJsonValue finishReason = choice.value("finish_reason");
     if (finishReason.isNull() || finishReason.isUndefined()) {
         return;
     }
 
-    // Fin normal de la generación. koboldcpp no manda ningún "[DONE]": la señal
-    // de fin es este campo.
+    // Fin normal de la generación (por qué este y no `[DONE]`: ver el
+    // comentario largo antes de esta función).
     //
     // Se da por terminada AQUÍ, sin esperar a que el servidor cierre la
-    // conexión. Alternativa descartada: esperar al cierre. En la traza real el
-    // cierre llega 150 ms después del último evento, tiempo en que la UI
-    // seguiría bloqueada sin motivo; y el final quedaría dependiendo de que el
-    // servidor cierre, cuando su propia respuesta dice `connection: keep-alive`.
-    //
+    // conexión. Alternativa descartada: esperar al cierre. La respuesta dice
+    // `connection: keep-alive`, así que el final quedaría dependiendo de algo
+    // que el servidor no promete hacer pronto, con la UI bloqueada mientras.
+    finish(finishReason.toString());
+}
+
+void KoboldClient::finish(const QString& finishReason)
+{
     // Primero se suelta la respuesta y después se avisa, en ese orden: así
     // quien reciba `generationFinished` ya ve `generating` en falso y puede
     // llamar a generate() de nuevo ahí mismo.
-    QString reason = finishReason.toString();
     releaseReply();
-    emit generationFinished(reason);
+    emit generationFinished(finishReason);
 }
 
 // La respuesta terminó: el servidor cerró la conexión, o hubo un error de red.
-// Si la generación ya se dio por terminada al ver `finish_reason`, este slot ni
-// siquiera corre, porque releaseReply() cortó la conexión de la signal. Así que
-// llegar aquí significa una de dos cosas: un error, o un cierre antes de tiempo.
+// Si la generación ya se dio por terminada al ver `finish_reason` o `[DONE]`,
+// este slot ni siquiera corre, porque releaseReply() cortó la conexión de la
+// signal. Así que llegar aquí significa una de dos cosas: un error, o un cierre
+// antes de tiempo.
 void KoboldClient::onFinished()
 {
     QNetworkReply* reply = m_reply;
@@ -363,9 +538,9 @@ void KoboldClient::onFinished()
         return;
     }
 
-    // La conexión se cerró sin que llegara nunca un `finish_reason`. NO es un
-    // final normal: el texto quedó cortado. Pasa si koboldcpp se muere o lo
-    // matan a mitad de una respuesta.
+    // La conexión se cerró sin que llegara nunca un `finish_reason` ni un
+    // `[DONE]`. NO es un final normal: el texto quedó cortado. Pasa si
+    // koboldcpp se muere o lo matan a mitad de una respuesta.
     //
     // Hay dos formas de enterarse y las dos caen aquí. Como la respuesta es
     // HTTP/1.0 sin `Content-Length` (está medido), "el servidor cerró" es

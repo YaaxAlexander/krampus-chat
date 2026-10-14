@@ -1,7 +1,9 @@
 // SseParser.cpp — el código de los métodos declarados en SseParser.h.
 //
 // El formato que se espera sale de mediciones reales contra koboldcpp: ver
-// NOTES-backend.md ("Stream SSE"), logs/sse-raw.txt y logs/sse-trace.txt.
+// NOTES-backend.md ("Endpoint de chat"), logs/chat-sse-raw.txt y
+// logs/chat-sse-trace.txt. (Las capturas del endpoint nativo, logs/sse-*.txt,
+// también se respetan: el parser es el mismo para los dos.)
 
 // Un .cpp siempre incluye su propio header: ahí está la declaración de la clase
 // cuyos métodos se escriben aquí. Las comillas indican un header nuestro.
@@ -14,7 +16,7 @@
 // evento. Si del otro lado hay algo que nunca manda ese final (un servidor que
 // no es koboldcpp y responde con un archivo enorme, por ejemplo), la memoria
 // crecería sin límite. 1 MiB es muchísimo más que cualquier evento real: los
-// medidos tienen entre 60 y 70 bytes, un token cada uno.
+// medidos del endpoint de chat tienen unos 240-250 bytes, un token cada uno.
 const int MAX_PENDING_BYTES = 1024 * 1024;
 
 // `SseParser::feed` se lee "el método feed de la clase SseParser". Como el
@@ -23,25 +25,24 @@ const int MAX_PENDING_BYTES = 1024 * 1024;
 //
 // --- El problema que resuelve ---
 // La red avisa "llegaron bytes", NO "llegó un evento". Los bytes llegan en
-// pedazos cortados donde sea. En la traza real (logs/sse-trace.txt) se ve de
-// todo: un evento entero en una lectura,
+// pedazos cortados donde sea. En la traza del endpoint de chat
+// (logs/chat-sse-trace.txt) cada evento llegó entero en una lectura,
 //
-//     "event: message\ndata: {\"token\": \" inv\", \"finish_reason\": null}\n\n"
+//     "data: {\"id\": ..., \"choices\": [{... \"content\": \" inv\"}}]}\n\n"
 //
-// o partido en dos, primero 15 bytes y después el resto:
-//
-//     "event: message\n"
-//     "data: {\"token\": \"El\", \"finish_reason\": null}\n\n"
-//
-// Y nada impide que un corte caiga en mitad de una línea ("data: {\"tok") o
-// que una sola lectura traiga tres eventos juntos. Si se interpretara cada
-// pedazo por separado, la mitad de las veces se leería basura.
+// pero en la del endpoint nativo (logs/sse-trace.txt), contra el mismo
+// servidor, los eventos llegaban a veces partidos en dos lecturas. Que una
+// captura saliera entera es suerte, no una promesa: nada impide que un corte
+// caiga en mitad de una línea ("data: {\"id") o que una sola lectura traiga
+// tres eventos juntos. Si se interpretara cada pedazo por separado, tarde o
+// temprano se leería basura.
 //
 // --- La solución ---
 // Es el mismo patrón de ProcessManager::readAvailableOutput(), en dos niveles:
 //   1. Lo recién llegado se AGREGA a un buffer que sobrevive entre llamadas.
 //   2. Mientras el buffer tenga un '\n', hay una línea completa: se procesa.
-//      Las líneas `event:` y `data:` se van anotando en "el evento en curso".
+//      Las líneas `data:` (y `event:`, si las hay) se van anotando en "el
+//      evento en curso".
 //   3. Una línea VACÍA significa "el evento en curso terminó": recién ahí se
 //      entrega.
 //   4. Lo que sobra sin '\n' (una línea a medias) se queda en el buffer.
@@ -149,7 +150,16 @@ void SseParser::processLine(const QByteArray& line, QList<SseEvent>& events)
         // líneas vacías seguidas.
         if (m_currentHasData) {
             SseEvent event;
-            event.type = m_currentType;
+            // El estándar SSE dice que un evento sin línea `event:` es de tipo
+            // "message". Se resuelve aquí, y no en quien recibe el evento,
+            // para que "sin `event:`" y "`event: message`" salgan idénticos y
+            // nadie más tenga que acordarse de la regla. Importa porque el
+            // endpoint de chat de koboldcpp no manda nunca la línea `event:`.
+            if (m_currentType.isEmpty()) {
+                event.type = "message";
+            } else {
+                event.type = m_currentType;
+            }
             event.data = m_currentData;
             events.append(event);
         }
@@ -191,6 +201,10 @@ void SseParser::processLine(const QByteArray& line, QList<SseEvent>& events)
     } else if (field == "data") {
         // Un evento puede traer varias líneas `data:`; el estándar manda unirlas
         // con un salto de línea. koboldcpp manda siempre una sola.
+        //
+        // Ojo: `data: [DONE]`, la marca de fin del endpoint de chat, para el
+        // parser es un evento como cualquier otro, con "[DONE]" como datos.
+        // Que no sea JSON es asunto de quien lo interpreta (KoboldClient).
         if (m_currentHasData) {
             m_currentData.append('\n');
         }

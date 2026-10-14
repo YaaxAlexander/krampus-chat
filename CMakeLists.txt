@@ -271,7 +271,8 @@ target_link_libraries(tst_sseparser PRIVATE
     Qt6::Test
 )
 
-# El test lee logs/sse-raw.txt (la respuesta real capturada) desde el repo.
+# El test lee las respuestas reales capturadas (logs/chat-sse-raw.txt y
+# logs/sse-raw.txt) desde el repo.
 target_compile_definitions(tst_sseparser PRIVATE
     KRAMPUS_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
 )

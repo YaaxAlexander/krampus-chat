@@ -34,11 +34,11 @@ Una ventana horrible que funciona de punta a punta. QML mínimo, cero estilo.
 - [x] Verificar que `gdb ./krampus` corre y que `bt` funciona — antes de necesitarlo
 - [x] `ProcessManager`: lanzar koboldcpp con QProcess, signal `ready` cuando
       el server responde, signal `failed` cuando no
-- [ ] `KoboldClient`: POST a `/api/extra/generate/stream`, parser SSE a mano
+- [x] `KoboldClient`: POST a `/api/extra/generate/stream`, parser SSE a mano
       sobre `readyRead()`, signal `tokenReceived`
-- [ ] UI: campo de texto para ruta del modelo, botón "cargar", input de prompt,
+- [x] UI: campo de texto para ruta del modelo, botón "cargar", input de prompt,
       área de salida sin formato
-- [ ] Que se vea el texto apareciendo token por token
+- [x] Que se vea el texto apareciendo token por token
 
 **Criterio de terminado:** cargas un GGUF, escribes algo, ves la respuesta
 streaming. Feo, pero real.

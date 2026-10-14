@@ -4,8 +4,13 @@
 // dan bytes a mano, cortados de todas las formas que la red podría cortarlos, y
 // se comprueba que el resultado es siempre el mismo.
 //
-// El material de prueba principal es logs/sse-raw.txt: el cuerpo de una
-// respuesta REAL de koboldcpp, guardado en la Fase 0.
+// El material de prueba son dos respuestas REALES de koboldcpp:
+//   - logs/chat-sse-raw.txt: el endpoint de chat (/v1/chat/completions), el que
+//     usa Krampus. Sus eventos NO traen línea `event:`.
+//   - logs/sse-raw.txt: el endpoint nativo (/api/extra/generate/stream), que
+//     Krampus ya no usa. Se sigue probando porque sus eventos SÍ traen
+//     `event: message` y porque su traza mostró eventos partidos entre
+//     lecturas: el parser tiene que aguantar las dos cosas.
 //
 // Cómo correrlos, desde la raíz del repo y después de compilar:
 //   ctest --test-dir build --output-on-failure
@@ -18,6 +23,7 @@
 #include "SseParser.h"
 
 #include <QFile>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QTest>
@@ -37,18 +43,49 @@ const QString REAL_CAPTURE_TEXT =
 // La captura trae 38 eventos con token y uno final con el motivo de fin.
 const int REAL_CAPTURE_EVENTS = 39;
 
+// La captura del endpoint de chat, el que usa Krampus.
+const QString CHAT_CAPTURE_PATH = QString(KRAMPUS_SOURCE_DIR) + "/logs/chat-sse-raw.txt";
+
+// El texto que forman, unidos, los `content` de la captura de chat. Aquí el
+// modelo terminó solo (finish_reason "stop"). La 'í' de "días" viene escapada.
+const QString CHAT_CAPTURE_TEXT =
+    "El invierno se caracteriza por temperaturas bajas y días cortos de luz.";
+
+// 16 eventos con texto, uno con finish_reason "stop" y el `data: [DONE]`.
+const int CHAT_CAPTURE_EVENTS = 18;
+
+// Los tamaños, en bytes, de cada lectura que hizo curl en
+// logs/chat-sse-trace.txt (las líneas "Recv data"), en orden. Ahí cada lectura
+// trajo justo un evento entero.
+const QList<qsizetype> CHAT_TRACE_READ_SIZES = {
+    242, 244, 245, 252, 243, 244, 247, 246, 242,
+    244, 242, 250, 245, 242, 247, 241, 242, 14,
+};
+
 // --- Funciones de ayuda ---
 
-// Lee la captura real entera, como bytes.
-QByteArray readRealCapture()
+// Lee un archivo de captura entero, como bytes.
+QByteArray readCaptureFile(const QString& path)
 {
-    QFile file(REAL_CAPTURE_PATH);
+    QFile file(path);
     // qFatal corta el programa con ese mensaje. Sin la captura ningún test
     // tiene sentido, y es mejor un error claro que treinta fallos confusos.
     if (!file.open(QIODevice::ReadOnly)) {
-        qFatal("No se pudo abrir %s", qPrintable(REAL_CAPTURE_PATH));
+        qFatal("No se pudo abrir %s", qPrintable(path));
     }
     return file.readAll();
+}
+
+// Las dos capturas. Funciones de una línea para que los tests digan QUÉ leen
+// sin repetir la ruta.
+QByteArray readRealCapture()
+{
+    return readCaptureFile(REAL_CAPTURE_PATH);
+}
+
+QByteArray readChatCapture()
+{
+    return readCaptureFile(CHAT_CAPTURE_PATH);
 }
 
 // Le da `input` a un parser nuevo en pedazos de `chunkSize` bytes (el último
@@ -88,6 +125,49 @@ QString textOf(const QList<SseEvent>& events)
     return text;
 }
 
+// Lo mismo para el formato del endpoint de chat, donde el texto está en
+// choices[0].delta.content. El `[DONE]` del final no es JSON: fromJson()
+// devuelve un documento vacío y de ahí sale un string vacío, que no suma nada.
+QString chatTextOf(const QList<SseEvent>& events)
+{
+    QString text;
+    for (const SseEvent& event : events) {
+        QJsonObject choice = jsonOf(event).value("choices").toArray().at(0).toObject();
+        text += choice.value("delta").toObject().value("content").toString();
+    }
+    return text;
+}
+
+// Comprueba lo que tiene que cumplir CUALQUIER troceo de la captura de chat:
+// los 18 eventos, todos de tipo "message" aunque ninguno trae línea `event:`,
+// el texto completo, y el final en su lugar. QVERIFY y QCOMPARE solo se pueden
+// usar dentro del test mismo (hacen `return` al fallar), así que esta función
+// devuelve un mensaje con el primer problema, o vacío si está todo bien.
+QString checkChatEvents(const QList<SseEvent>& events)
+{
+    if (events.size() != CHAT_CAPTURE_EVENTS) {
+        return QString("se esperaban %1 eventos y salieron %2").arg(CHAT_CAPTURE_EVENTS).arg(events.size());
+    }
+    for (const SseEvent& event : events) {
+        if (event.type != "message") {
+            return QString("evento de tipo «%1», se esperaba «message»").arg(QString::fromUtf8(event.type));
+        }
+    }
+    if (chatTextOf(events) != CHAT_CAPTURE_TEXT) {
+        return QString("texto distinto: «%1»").arg(chatTextOf(events));
+    }
+    // El penúltimo trae el motivo de fin; el último es la marca, sin JSON.
+    QJsonObject finishChoice =
+        jsonOf(events.at(events.size() - 2)).value("choices").toArray().at(0).toObject();
+    if (finishChoice.value("finish_reason").toString() != "stop") {
+        return "el penúltimo evento no trae finish_reason \"stop\"";
+    }
+    if (events.last().data != "[DONE]") {
+        return QString("el último evento no es [DONE]: «%1»").arg(QString::fromUtf8(events.last().data));
+    }
+    return QString();
+}
+
 // La clase de tests. Hereda de QObject y lleva Q_OBJECT porque Qt Test descubre
 // los tests buscando sus "private slots": cada uno es un test, y corren en el
 // orden en que están escritos.
@@ -96,6 +176,10 @@ class TestSseParser : public QObject
     Q_OBJECT
 
 private slots:
+    void chatCaptureAllAtOnce();
+    void chatCaptureByteByByte();
+    void chatCaptureEveryChunkSize();
+    void chatCaptureSplitLikeTheTrace();
     void realCaptureAllAtOnce();
     void realCaptureByteByByte();
     void realCaptureEveryChunkSize();
@@ -115,6 +199,84 @@ private slots:
 // Sobre los macros:
 //   QCOMPARE(a, b) : falla el test si a != b, y muestra los dos valores.
 //   QVERIFY(x)     : falla el test si x es falso.
+
+// --- Endpoint de chat ---
+
+// Toda la respuesta de chat en una sola llamada.
+void TestSseParser::chatCaptureAllAtOnce()
+{
+    SseParser parser;
+    QList<SseEvent> events = parser.feed(readChatCapture());
+
+    QString problem = checkChatEvents(events);
+    // isEmpty() = sin problemas. Si hay uno, el mensaje dice cuál.
+    QVERIFY2(problem.isEmpty(), qPrintable(problem));
+
+    // El primero, tal cual está en la captura: sin el prefijo "data: ".
+    QVERIFY(events.first().data.startsWith("{\"id\": \"chatcmpl-A372044\""));
+    QVERIFY(events.first().data.endsWith("\"content\": \"El\"}}]}"));
+    QVERIFY(!parser.hasOverflowed());
+}
+
+// Un byte por llamada: cada línea y cada separador quedan partidos.
+void TestSseParser::chatCaptureByteByByte()
+{
+    QString problem = checkChatEvents(feedInChunks(readChatCapture(), 1));
+    QVERIFY2(problem.isEmpty(), qPrintable(problem));
+}
+
+// Todos los tamaños de pedazo desde 2 hasta 300 bytes. Los eventos de chat
+// miden entre 240 y 252 bytes, así que hay cortes en todas las posiciones
+// respecto a sus límites, y también lecturas que traen más de un evento.
+void TestSseParser::chatCaptureEveryChunkSize()
+{
+    QByteArray capture = readChatCapture();
+
+    SseParser referenceParser;
+    QList<SseEvent> reference = referenceParser.feed(capture);
+
+    for (qsizetype chunkSize = 2; chunkSize <= 300; chunkSize++) {
+        QList<SseEvent> events = feedInChunks(capture, chunkSize);
+
+        QString context = QString("tamaño de pedazo: %1").arg(chunkSize);
+        QString problem = checkChatEvents(events);
+        QVERIFY2(problem.isEmpty(), qPrintable(context + ": " + problem));
+        for (qsizetype i = 0; i < events.size(); i++) {
+            QVERIFY2(events.at(i).type == reference.at(i).type, qPrintable(context));
+            QVERIFY2(events.at(i).data == reference.at(i).data, qPrintable(context));
+        }
+    }
+}
+
+// Los cortes exactos de logs/chat-sse-trace.txt: un evento entero por lectura.
+// Cada lectura debe entregar justo un evento, en el momento en que llega.
+void TestSseParser::chatCaptureSplitLikeTheTrace()
+{
+    QByteArray capture = readChatCapture();
+
+    // La traza y la captura son de la misma respuesta: los tamaños suman el
+    // archivo entero. Si no, la tabla de arriba está mal copiada.
+    qsizetype total = 0;
+    for (qsizetype size : CHAT_TRACE_READ_SIZES) {
+        total += size;
+    }
+    QCOMPARE(total, capture.size());
+
+    SseParser parser;
+    QList<SseEvent> allEvents;
+    qsizetype position = 0;
+    for (qsizetype size : CHAT_TRACE_READ_SIZES) {
+        QList<SseEvent> events = parser.feed(capture.mid(position, size));
+        QCOMPARE(events.size(), 1);
+        allEvents.append(events);
+        position += size;
+    }
+
+    QString problem = checkChatEvents(allEvents);
+    QVERIFY2(problem.isEmpty(), qPrintable(problem));
+}
+
+// --- Endpoint nativo (ver el comentario del principio) ---
 
 // El caso más simple: toda la respuesta en una sola llamada.
 void TestSseParser::realCaptureAllAtOnce()
@@ -331,8 +493,8 @@ void TestSseParser::toleratesWhatTheStandardAllows()
 
     QCOMPARE(events.size(), 3);
     QCOMPARE(events.at(0).data, QByteArray("sin espacio"));
-    // Sin línea `event:` el tipo queda vacío.
-    QCOMPARE(events.at(0).type, QByteArray(""));
+    // Sin línea `event:` el tipo es "message", como manda el estándar.
+    QCOMPARE(events.at(0).type, QByteArray("message"));
     QCOMPARE(events.at(1).data, QByteArray(" dos espacios"));
     QCOMPARE(events.at(2).data, QByteArray("primera\nsegunda"));
 }
@@ -362,7 +524,8 @@ void TestSseParser::resetForgetsPartialEvent()
     QList<SseEvent> events = parser.feed("data: nuevo\n\n");
     QCOMPARE(events.size(), 1);
     QCOMPARE(events.first().data, QByteArray("nuevo"));
-    QCOMPARE(events.first().type, QByteArray(""));
+    // El `event: viejo` se olvidó: el evento nuevo tiene el tipo por defecto.
+    QCOMPARE(events.first().type, QByteArray("message"));
 }
 
 // Si nunca llega un fin de evento, el parser no guarda bytes para siempre.

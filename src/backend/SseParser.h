@@ -10,12 +10,14 @@
 // "Server-Sent Events" es un formato de texto para que un servidor HTTP mande
 // una respuesta que no termina de golpe, sino que va llegando de a poco. Es lo
 // que usa koboldcpp para mandar un token a la vez. Cada evento son unas líneas
-// de la forma `campo: valor` y termina con una línea vacía. Lo que manda
-// koboldcpp, medido (ver NOTES-backend.md, "Stream SSE", y logs/sse-raw.txt):
+// de la forma `campo: valor` y termina con una línea vacía. Lo que manda el
+// endpoint de chat de koboldcpp, medido (ver NOTES-backend.md, "Endpoint de
+// chat", y logs/chat-sse-raw.txt; JSON recortado):
 //
-//     event: message
-//     data: {"token": " inv", "finish_reason": null}
+//     data: {"id": "chatcmpl-...", "choices": [{"delta": {"content": " inv"}, ...}]}
 //     <línea vacía>
+//
+// y, al final de todo, `data: [DONE]` y su línea vacía.
 //
 // Qt no trae un lector de SSE, así que se hace a mano aquí.
 //
@@ -40,12 +42,13 @@
 // Los dos campos son QByteArray = bytes crudos, el `bytes` de Python, y NO
 // QString (texto). Por qué bytes: ver la explicación de feed() en el .cpp.
 struct SseEvent {
-    // El valor de la línea `event:`. koboldcpp siempre manda "message". Si el
-    // evento no trae esa línea queda vacío (el estándar SSE dice que entonces
-    // el tipo es "message").
+    // El valor de la línea `event:`. Si el evento no trae esa línea (el caso
+    // del endpoint de chat de koboldcpp), vale "message": es lo que dice el
+    // estándar SSE, y el parser lo aplica para que nunca salga vacío.
     QByteArray type;
 
-    // El valor de la línea `data:`, sin el prefijo. Para koboldcpp, un JSON.
+    // El valor de la línea `data:`, sin el prefijo. Para koboldcpp, un JSON, o
+    // el texto `[DONE]` en el último evento.
     QByteArray data;
 };
 

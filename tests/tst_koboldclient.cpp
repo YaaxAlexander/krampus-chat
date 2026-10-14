@@ -3,8 +3,9 @@
 // No usan el koboldcpp real (necesita GPU y un modelo). En su lugar, este mismo
 // archivo levanta un servidor HTTP de mentira en 127.0.0.1 (la clase
 // FakeKoboldServer de más abajo) que responde con lo que koboldcpp respondió de
-// verdad: las cabeceras de logs/sse-trace.txt y el cuerpo de logs/sse-raw.txt.
-// KoboldClient no nota la diferencia: se conecta por un socket TCP real.
+// verdad en el endpoint de chat: las cabeceras de logs/chat-sse-trace.txt y el
+// cuerpo de logs/chat-sse-raw.txt. KoboldClient no nota la diferencia: se
+// conecta por un socket TCP real.
 //
 // Cómo correrlos, desde la raíz del repo y después de compilar:
 //   ctest --test-dir build --output-on-failure
@@ -17,29 +18,34 @@
 #include "KoboldClient.h"
 
 #include <QFile>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QRegularExpression>
 #include <QSignalSpy>
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QTest>
 #include <QTimer>
+#include <QVariantList>
+#include <QVariantMap>
 
 // Ruta al cuerpo real de una respuesta. KRAMPUS_SOURCE_DIR lo define CMake al
 // compilar este archivo (ver target_compile_definitions en CMakeLists.txt).
-const QString REAL_CAPTURE_PATH = QString(KRAMPUS_SOURCE_DIR) + "/logs/sse-raw.txt";
+const QString CHAT_CAPTURE_PATH = QString(KRAMPUS_SOURCE_DIR) + "/logs/chat-sse-raw.txt";
 
-// El texto que forman los tokens de la captura, y cuántos son.
-const QString REAL_CAPTURE_TEXT =
-    "El invierno llega con su frío y su nieve, y trae consigo un aire fresco y limpio."
-    "  (La frase tiene 15 palabras y describe la sens";
-const int REAL_CAPTURE_TOKENS = 38;
+// El texto que forman los `content` de la captura, y cuántos eventos lo traen.
+// La captura tiene además un evento con finish_reason "stop" (y content vacío)
+// y el `data: [DONE]` final.
+const QString CHAT_CAPTURE_TEXT =
+    "El invierno se caracteriza por temperaturas bajas y días cortos de luz.";
+const int CHAT_CAPTURE_TOKENS = 16;
 
 // Las cabeceras con las que respondió koboldcpp, copiadas de
-// logs/sse-trace.txt (menos `access-control-allow-headers`, que es larguísima y
-// solo le importa a un navegador). Los detalles que importan: es HTTP/1.0, dice
-// `connection: keep-alive` y NO trae `Content-Length`, así que el cuerpo
-// termina cuando el servidor cierra la conexión.
+// logs/chat-sse-trace.txt (menos `access-control-allow-headers`, que es
+// larguísima y solo le importa a un navegador). Los detalles que importan: es
+// HTTP/1.0, dice `connection: keep-alive` y NO trae `Content-Length`, así que
+// el cuerpo termina cuando el servidor cierra la conexión.
 //
 // En HTTP las cabeceras terminan cada una en "\r\n", y una línea vacía las
 // separa del cuerpo. (En C++, dos strings entre comillas seguidos se pegan en
@@ -47,7 +53,7 @@ const int REAL_CAPTURE_TOKENS = 38;
 const QByteArray REAL_OK_HEADERS =
     "HTTP/1.0 200 OK\r\n"
     "Server: KoboldCppServer 1\r\n"
-    "Date: Mon, 12 Oct 2026 23:15:38 GMT\r\n"
+    "Date: Wed, 14 Oct 2026 06:01:11 GMT\r\n"
     "X-Accel-Buffering: no\r\n"
     "cache-control: no-cache\r\n"
     "connection: keep-alive\r\n"
@@ -57,6 +63,14 @@ const QByteArray REAL_OK_HEADERS =
     "cache-control: no-store\r\n"
     "content-type: text/event-stream\r\n"
     "\r\n";
+
+// El warning que deja KoboldClient cuando el stream termina con `[DONE]` sin
+// un finish_reason antes. Es una expresión regular (un patrón de búsqueda, el
+// módulo `re` de Python) y no el texto entero, para que estos tests no se
+// rompan si se retoca la redacción. `\\[` es un '[' literal: en un patrón los
+// corchetes solos tienen otro significado, y en un string de C++ la barra
+// invertida se escribe doble.
+const QRegularExpression DONE_WITHOUT_REASON_WARNING("\\[DONE\\] sin dar un finish_reason");
 
 // Pausa entre un pedazo de respuesta y el siguiente. El koboldcpp real tarda
 // unos 50 ms por token; aquí alcanza con que sea más que cero, para que cada
@@ -70,23 +84,23 @@ const int WAIT_MS = 10000;
 // --- Funciones de ayuda ---
 
 // Lee la captura real entera, como bytes.
-QByteArray readRealCapture()
+QByteArray readChatCapture()
 {
-    QFile file(REAL_CAPTURE_PATH);
+    QFile file(CHAT_CAPTURE_PATH);
     // qFatal corta el programa con ese mensaje: sin la captura no hay tests.
     if (!file.open(QIODevice::ReadOnly)) {
-        qFatal("No se pudo abrir %s", qPrintable(REAL_CAPTURE_PATH));
+        qFatal("No se pudo abrir %s", qPrintable(CHAT_CAPTURE_PATH));
     }
     return file.readAll();
 }
 
-// Parte la captura en pedazos como los de la traza real: por cada evento,
-// primero `event: message\n` solo y después la línea `data:` con su línea vacía.
+// Parte la captura en eventos enteros, uno por pedazo. Es exactamente el
+// troceo de logs/chat-sse-trace.txt, donde cada lectura trajo un evento.
 //
 // `QList<QByteArray>` = lista de bytes (`list[bytes]`).
-QList<QByteArray> realCaptureChunks()
+QList<QByteArray> chatTraceChunks()
 {
-    QByteArray capture = readRealCapture();
+    QByteArray capture = readChatCapture();
     QList<QByteArray> chunks;
 
     qsizetype eventStart = 0;
@@ -96,16 +110,77 @@ QList<QByteArray> realCaptureChunks()
         if (separatorPosition == -1) {
             break;
         }
-        // El primer '\n' del evento es el final de la línea `event:`.
-        qsizetype firstNewline = capture.indexOf('\n', eventStart);
-
-        // mid(desde, cuántos) = un trozo. El +1 incluye el '\n'; el +2, los dos.
-        chunks.append(capture.mid(eventStart, firstNewline + 1 - eventStart));
-        chunks.append(capture.mid(firstNewline + 1, separatorPosition + 2 - (firstNewline + 1)));
-
+        // mid(desde, cuántos) = un trozo. El +2 incluye los dos '\n'.
+        chunks.append(capture.mid(eventStart, separatorPosition + 2 - eventStart));
         eventStart = separatorPosition + 2;
     }
     return chunks;
+}
+
+// Parte la captura en pedazos MÁS chicos que los de la traza: cada evento en
+// dos, la línea `data: ...\n` por un lado y la línea vacía que lo cierra por el
+// otro. Es el troceo que usan casi todos los tests: si el cliente esperara un
+// evento entero por lectura (lo que la traza de chat mostró, pero nadie
+// promete), aquí se notaría. Con el endpoint nativo la traza sí mostró eventos
+// partidos así.
+QList<QByteArray> chatCaptureChunks()
+{
+    QList<QByteArray> chunks;
+    for (const QByteArray& event : chatTraceChunks()) {
+        // chop(1) quita el último byte: el segundo '\n'.
+        QByteArray dataLine = event;
+        dataLine.chop(1);
+        chunks.append(dataLine);
+        chunks.append("\n");
+    }
+    return chunks;
+}
+
+// Un evento SSE del endpoint de chat, armado a mano. `choiceJson` es lo que va
+// dentro de `"choices": [ ... ]`; el resto imita a koboldcpp. Sirve para los
+// casos que la captura real no trae.
+QByteArray chatEvent(const QByteArray& choiceJson)
+{
+    return "data: {\"id\": \"chatcmpl-1\", \"object\": \"chat.completion.chunk\", "
+           "\"choices\": [" + choiceJson + "]}\n\n";
+}
+
+// Un evento con un pedazo de texto, como los de la captura.
+QByteArray tokenEvent(const QByteArray& token)
+{
+    return chatEvent("{\"index\": 0, \"finish_reason\": null, "
+                     "\"delta\": {\"role\": \"assistant\", \"content\": \"" + token + "\"}}");
+}
+
+// El evento que cierra, con content vacío, como el de la captura.
+QByteArray finishEvent(const QByteArray& reason)
+{
+    return chatEvent("{\"index\": 0, \"finish_reason\": \"" + reason + "\", "
+                     "\"delta\": {\"role\": \"assistant\", \"content\": \"\"}}");
+}
+
+const QByteArray DONE_EVENT = "data: [DONE]\n\n";
+
+// Un mensaje de chat como los que manda QML: un "diccionario" con `role` y
+// `content`. QVariantMap es el `dict` de Qt (claves de texto, valores en una
+// caja QVariant); un objeto de JavaScript llega a C++ convertido en uno de
+// estos.
+QVariantMap chatMessage(const QString& role, const QString& content)
+{
+    QVariantMap message;
+    message.insert("role", role);
+    message.insert("content", content);
+    return message;
+}
+
+// La conversación más simple: un solo mensaje del usuario. QVariantList es la
+// lista de Qt cuyos elementos son cajas QVariant (cada una puede guardar
+// cualquier tipo): lo que llega cuando QML pasa un arreglo.
+QVariantList userSays(const QString& text)
+{
+    QVariantList messages;
+    messages.append(chatMessage("user", text));
+    return messages;
 }
 
 // Une los tokens que anotó un QSignalSpy enganchado a `tokenReceived`.
@@ -330,6 +405,7 @@ void FakeKoboldServer::onSocketDisconnected()
     emit clientDisconnected();
 }
 
+
 // --- Los tests ---
 //
 // La clase hereda de QObject y lleva Q_OBJECT porque Qt Test descubre los tests
@@ -340,11 +416,16 @@ class TestKoboldClient : public QObject
 
 private slots:
     void fullStream();
-    void requestIsPostWithPromptAsJson();
+    void requestIsPostToChatCompletions();
+    void doneAfterFinishReasonIsNotASecondEnd();
+    void doneWithoutFinishReasonEndsWithoutReason();
+    void deltaWithoutContentIsNotAnError();
+    void emptyOrMissingChoicesAreIgnored();
+    void invalidMessagesFailWithoutNetwork();
     void unreachableServer();
     void emptyBaseUrlFailsWithoutNetwork();
     void http503();
-    void connectionCutWithoutFinishReason();
+    void connectionCutWithoutEndMarker();
     void invalidJsonInEvent();
     void secondGenerateWhileGeneratingIsIgnored();
     void generateAgainFromInsideFinishedSignal();
@@ -368,7 +449,7 @@ private slots:
 void TestKoboldClient::fullStream()
 {
     FakeKoboldServer server;
-    server.bodyChunks = realCaptureChunks();
+    server.bodyChunks = chatCaptureChunks();
 
     KoboldClient client;
     client.setBaseUrl(server.baseUrl());
@@ -382,20 +463,20 @@ void TestKoboldClient::fullStream()
     QSignalSpy generatingSpy(&client, &KoboldClient::generatingChanged);
 
     QVERIFY(!client.generating());
-    client.generate("Escribe una frase corta sobre el invierno:\n");
+    client.generate(userSays("Escribe una frase corta sobre el invierno."));
     // Inmediatamente después de generate(), sin esperar nada.
     QVERIFY(client.generating());
 
     QTRY_COMPARE_WITH_TIMEOUT(finishedSpy.count(), 1, WAIT_MS);
 
     // Los tokens, en orden y completos (incluida la 'í' que viaja escapada).
-    QCOMPARE(tokenSpy.count(), REAL_CAPTURE_TOKENS);
+    QCOMPARE(tokenSpy.count(), CHAT_CAPTURE_TOKENS);
     QCOMPARE(tokenSpy.at(0).at(0).toString(), QString("El"));
     QCOMPARE(tokenSpy.at(1).at(0).toString(), QString(" inv"));
-    QCOMPARE(joinTokens(tokenSpy), REAL_CAPTURE_TEXT);
+    QCOMPARE(joinTokens(tokenSpy), CHAT_CAPTURE_TEXT);
 
     // Terminó con el motivo que mandó el servidor.
-    QCOMPARE(finishedSpy.at(0).at(0).toString(), QString("length"));
+    QCOMPARE(finishedSpy.at(0).at(0).toString(), QString("stop"));
 
     // `generating` volvió a falso, con dos cambios: a verdadero y a falso.
     QVERIFY(!client.generating());
@@ -407,26 +488,39 @@ void TestKoboldClient::fullStream()
     QCOMPARE(server.requestCount, 1);
 }
 
-// Lo que el servidor recibe: un POST a la ruta de streaming, con un JSON que
-// trae el prompt intacto.
-void TestKoboldClient::requestIsPostWithPromptAsJson()
+// Lo que el servidor recibe: un POST a /v1/chat/completions con un JSON que
+// trae la conversación intacta, `stream: true` y un máximo de tokens.
+void TestKoboldClient::requestIsPostToChatCompletions()
 {
     FakeKoboldServer server;
-    server.bodyChunks = realCaptureChunks();
+    server.bodyChunks = chatCaptureChunks();
 
     KoboldClient client;
-    // Con una barra de más al final, a propósito: no debe salir "//api/...".
+    // Con una barra de más al final, a propósito: no debe salir "//v1/...".
     client.setBaseUrl(server.baseUrl() + "/");
     QSignalSpy finishedSpy(&client, &KoboldClient::generationFinished);
 
-    // Un prompt con acentos, comillas y salto de línea: todo lo que podría
-    // romperse al armar el JSON a mano.
-    QString prompt = "Di \"hola\" en español, ñandú:\n";
-    client.generate(prompt);
+    // Tres mensajes con todo lo que podría romperse al armar el JSON: comillas,
+    // saltos de línea, tabulador, acentos, ñ, otros alfabetos y emoji (que en
+    // UTF-16, el formato interno de QString, ocupan DOS unidades: un error al
+    // copiarlos los partiría).
+    QVariantList messages;
+    messages.append(chatMessage("user", "Di \"hola\" en español, ñandú:\nsegunda línea"));
+    messages.append(chatMessage("assistant", "¡Hola! 👋 «comillas» \"dobles\"\n\ty un tab"));
+    messages.append(chatMessage("user", "¿Y en japonés? 日本語 🎌"));
+
+    // Una clave de más en un mensaje: el cliente no debe mandarla. Se le
+    // agrega a una COPIA del mensaje 2 (toMap() devuelve una copia) y la copia
+    // reemplaza al original en la lista.
+    QVariantMap withExtraKey = messages.at(1).toMap();
+    withExtraKey.insert("hora", "12:00");
+    messages.replace(1, withExtraKey);
+
+    client.generate(messages);
     QTRY_COMPARE_WITH_TIMEOUT(finishedSpy.count(), 1, WAIT_MS);
 
     // La primera línea de la petición: método, ruta y versión.
-    QVERIFY2(server.lastRequestHead.startsWith("POST /api/extra/generate/stream HTTP/1.1\r\n"),
+    QVERIFY2(server.lastRequestHead.startsWith("POST /v1/chat/completions HTTP/1.1\r\n"),
              server.lastRequestHead.constData());
     QVERIFY2(server.lastRequestHead.toLower().contains("content-type: application/json"),
              server.lastRequestHead.constData());
@@ -438,12 +532,220 @@ void TestKoboldClient::requestIsPostWithPromptAsJson()
     QVERIFY(document.isObject());
     QJsonObject body = document.object();
 
-    // ...con el prompt idéntico y un max_length numérico y positivo.
-    QCOMPARE(body.value("prompt").toString(), prompt);
-    QVERIFY(body.value("max_length").isDouble());
-    QVERIFY(body.value("max_length").toInt() > 0);
-    // Y nada más: los samplers son de la Fase 3.
-    QCOMPARE(body.size(), 2);
+    // ...que pide streaming (un booleano de verdad, no el texto "true")...
+    QVERIFY(body.value("stream").isBool());
+    QCOMPARE(body.value("stream").toBool(), true);
+    // ...con un max_tokens numérico y positivo...
+    QVERIFY(body.value("max_tokens").isDouble());
+    QVERIFY(body.value("max_tokens").toInt() > 0);
+    // ...y nada más que eso y los mensajes: los samplers son de la Fase 3.
+    QCOMPARE(body.size(), 3);
+
+    // Los mensajes: mismos, en el mismo orden, con roles y textos idénticos, y
+    // cada uno con solo sus dos claves.
+    QJsonArray sent = body.value("messages").toArray();
+    QCOMPARE(sent.size(), messages.size());
+    for (qsizetype i = 0; i < sent.size(); i++) {
+        QJsonObject sentMessage = sent.at(i).toObject();
+        QVariantMap original = messages.at(i).toMap();
+        QCOMPARE(sentMessage.size(), 2);
+        QCOMPARE(sentMessage.value("role").toString(), original.value("role").toString());
+        QCOMPARE(sentMessage.value("content").toString(), original.value("content").toString());
+    }
+}
+
+// El final llega dos veces: el evento con finish_reason y después `[DONE]`. Se
+// avisa UNA sola vez, con el motivo, y sin errores ni warnings. Se prueba con
+// los dos casos de lectura: todo el cuerpo en una (el `[DONE]` queda en la
+// misma lista de eventos que el finish_reason) y con el troceo de la traza (el
+// `[DONE]` llega en una lectura posterior).
+//
+// En los dos el servidor deja la conexión ABIERTA al final: así se comprueba
+// que lo que cierra la generación es el finish_reason y no el cierre.
+void TestKoboldClient::doneAfterFinishReasonIsNotASecondEnd()
+{
+    // Si apareciera el warning de "[DONE] sin finish_reason", el test falla.
+    QTest::failOnWarning(DONE_WITHOUT_REASON_WARNING);
+
+    // Los dos troceos. `QList<QList<QByteArray>>` = lista de listas de bytes.
+    QList<QList<QByteArray>> bodies;
+    QList<QByteArray> allInOneRead;
+    allInOneRead.append(readChatCapture());
+    bodies.append(allInOneRead);
+    bodies.append(chatTraceChunks());
+
+    for (const QList<QByteArray>& body : bodies) {
+        FakeKoboldServer server;
+        server.bodyChunks = body;
+        server.closeWhenDone = false;
+
+        KoboldClient client;
+        client.setBaseUrl(server.baseUrl());
+        QSignalSpy tokenSpy(&client, &KoboldClient::tokenReceived);
+        QSignalSpy finishedSpy(&client, &KoboldClient::generationFinished);
+        QSignalSpy failedSpy(&client, &KoboldClient::generationFailed);
+        QSignalSpy generatingSpy(&client, &KoboldClient::generatingChanged);
+
+        client.generate(userSays("hola"));
+        QTRY_COMPARE_WITH_TIMEOUT(finishedSpy.count(), 1, WAIT_MS);
+        QCOMPARE(finishedSpy.at(0).at(0).toString(), QString("stop"));
+
+        // Al terminar, el cliente corta la conexión por su cuenta. Se espera a
+        // que el servidor lo note: para entonces, si el `[DONE]` fuera a
+        // producir algo, ya lo habría hecho.
+        QTRY_VERIFY_WITH_TIMEOUT(!server.hasOpenConnection(), WAIT_MS);
+
+        QCOMPARE(finishedSpy.count(), 1);
+        QCOMPARE(failedSpy.count(), 0);
+        QCOMPARE(generatingSpy.count(), 2);
+        QCOMPARE(joinTokens(tokenSpy), CHAT_CAPTURE_TEXT);
+        QVERIFY(client.errorMessage().isEmpty());
+    }
+}
+
+// `[DONE]` sin ningún finish_reason antes. El servidor dijo que terminó, así
+// que es un final bueno, con el motivo vacío (y un warning en el log). La
+// conexión queda abierta: lo que cierra la generación es el `[DONE]`.
+void TestKoboldClient::doneWithoutFinishReasonEndsWithoutReason()
+{
+    FakeKoboldServer server;
+    server.bodyChunks.append(tokenEvent("Hola"));
+    server.bodyChunks.append(tokenEvent(" mundo"));
+    server.bodyChunks.append(DONE_EVENT);
+    server.closeWhenDone = false;
+
+    KoboldClient client;
+    client.setBaseUrl(server.baseUrl());
+    QSignalSpy tokenSpy(&client, &KoboldClient::tokenReceived);
+    QSignalSpy finishedSpy(&client, &KoboldClient::generationFinished);
+    QSignalSpy failedSpy(&client, &KoboldClient::generationFailed);
+
+    // Se espera el warning: si no llegara, el test falla.
+    QTest::ignoreMessage(QtWarningMsg, DONE_WITHOUT_REASON_WARNING);
+    client.generate(userSays("hola"));
+    QTRY_COMPARE_WITH_TIMEOUT(finishedSpy.count(), 1, WAIT_MS);
+
+    QCOMPARE(finishedSpy.at(0).at(0).toString(), QString(""));
+    QCOMPARE(joinTokens(tokenSpy), QString("Hola mundo"));
+    QCOMPARE(failedSpy.count(), 0);
+    QVERIFY(!client.generating());
+    QVERIFY(client.errorMessage().isEmpty());
+}
+
+// Deltas sin texto: sin la clave `content`, con `content: null`, con el delta
+// vacío o sin delta. Ninguno es un error ni produce un token; el texto que sí
+// llega se entrega igual.
+void TestKoboldClient::deltaWithoutContentIsNotAnError()
+{
+    FakeKoboldServer server;
+    // Solo el rol: lo que mandan otros servidores de este estilo al empezar.
+    server.bodyChunks.append(chatEvent("{\"index\": 0, \"finish_reason\": null, \"delta\": {\"role\": \"assistant\"}}"));
+    server.bodyChunks.append(chatEvent("{\"index\": 0, \"finish_reason\": null, \"delta\": {\"content\": null}}"));
+    server.bodyChunks.append(chatEvent("{\"index\": 0, \"finish_reason\": null, \"delta\": {}}"));
+    server.bodyChunks.append(chatEvent("{\"index\": 0, \"finish_reason\": null}"));
+    server.bodyChunks.append(tokenEvent("Hola"));
+    // El final, también sin content.
+    server.bodyChunks.append(chatEvent("{\"index\": 0, \"finish_reason\": \"length\", \"delta\": {}}"));
+    server.bodyChunks.append(DONE_EVENT);
+
+    KoboldClient client;
+    client.setBaseUrl(server.baseUrl());
+    QSignalSpy tokenSpy(&client, &KoboldClient::tokenReceived);
+    QSignalSpy finishedSpy(&client, &KoboldClient::generationFinished);
+    QSignalSpy failedSpy(&client, &KoboldClient::generationFailed);
+
+    client.generate(userSays("hola"));
+    QTRY_COMPARE_WITH_TIMEOUT(finishedSpy.count(), 1, WAIT_MS);
+
+    QCOMPARE(tokenSpy.count(), 1);
+    QCOMPARE(joinTokens(tokenSpy), QString("Hola"));
+    QCOMPARE(finishedSpy.at(0).at(0).toString(), QString("length"));
+    QCOMPARE(failedSpy.count(), 0);
+}
+
+// Eventos con `choices` vacío, sin `choices`, o con `choices` que no es una
+// lista. No traen nada que hacer: se ignoran, sin error.
+void TestKoboldClient::emptyOrMissingChoicesAreIgnored()
+{
+    FakeKoboldServer server;
+    server.bodyChunks.append("data: {\"id\": \"chatcmpl-1\", \"choices\": []}\n\n");
+    server.bodyChunks.append(tokenEvent("Hola"));
+    server.bodyChunks.append("data: {\"id\": \"chatcmpl-1\"}\n\n");
+    server.bodyChunks.append("data: {\"id\": \"chatcmpl-1\", \"choices\": null}\n\n");
+    server.bodyChunks.append(tokenEvent(" mundo"));
+    server.bodyChunks.append(finishEvent("stop"));
+    server.bodyChunks.append(DONE_EVENT);
+
+    KoboldClient client;
+    client.setBaseUrl(server.baseUrl());
+    QSignalSpy tokenSpy(&client, &KoboldClient::tokenReceived);
+    QSignalSpy finishedSpy(&client, &KoboldClient::generationFinished);
+    QSignalSpy failedSpy(&client, &KoboldClient::generationFailed);
+
+    client.generate(userSays("hola"));
+    QTRY_COMPARE_WITH_TIMEOUT(finishedSpy.count(), 1, WAIT_MS);
+
+    QCOMPARE(joinTokens(tokenSpy), QString("Hola mundo"));
+    QCOMPARE(finishedSpy.at(0).at(0).toString(), QString("stop"));
+    QCOMPARE(failedSpy.count(), 0);
+}
+
+// Conversaciones mal formadas: fallan en el momento, con un mensaje que dice
+// qué está mal, sin `generating` en ningún momento y sin abrir conexión.
+void TestKoboldClient::invalidMessagesFailWithoutNetwork()
+{
+    FakeKoboldServer server;
+
+    // Cada caso: la lista de mensajes y un pedazo del mensaje de error
+    // esperado. `struct` agrupa los dos datos (como un @dataclass).
+    struct InvalidCase {
+        QVariantList messages;
+        QString expectedError;
+    };
+
+    QVariantMap withoutRole;
+    withoutRole.insert("content", "hola");
+    QVariantMap emptyRole = chatMessage("", "hola");
+    QVariantMap withoutContent;
+    withoutContent.insert("role", "user");
+    QVariantMap numericContent;
+    numericContent.insert("role", "user");
+    numericContent.insert("content", 42);
+
+    // Un caso por línea. Las llaves `{ ... }` arman cada InvalidCase campo por
+    // campo, en el orden en que están declarados.
+    QList<InvalidCase> cases = {
+        {QVariantList(), "vacía"},
+        {QVariantList({QVariant("hola")}), "mensaje 1"},
+        {QVariantList({withoutRole}), "rol"},
+        {QVariantList({emptyRole}), "rol"},
+        {QVariantList({withoutContent}), "texto"},
+        {QVariantList({numericContent}), "texto"},
+        // El primero está bien, el segundo no: el error dice cuál.
+        {QVariantList({chatMessage("user", "hola"), withoutRole}), "mensaje 2"},
+    };
+
+    for (const InvalidCase& invalidCase : cases) {
+        KoboldClient client;
+        client.setBaseUrl(server.baseUrl());
+        QSignalSpy failedSpy(&client, &KoboldClient::generationFailed);
+        QSignalSpy generatingSpy(&client, &KoboldClient::generatingChanged);
+
+        client.generate(invalidCase.messages);
+
+        // Sin esperar: el fallo es inmediato.
+        QCOMPARE(failedSpy.count(), 1);
+        QCOMPARE(generatingSpy.count(), 0);
+        QVERIFY(!client.generating());
+        QVERIFY2(client.errorMessage().contains(invalidCase.expectedError),
+                 qPrintable(client.errorMessage()));
+    }
+
+    // Una pausa fija, la única de estos tests: aquí se comprueba que algo NO
+    // pasa, y para eso no hay condición que esperar. Si alguno de los casos
+    // hubiera abierto una conexión, en 200 ms en 127.0.0.1 ya habría llegado.
+    QTest::qWait(200);
+    QCOMPARE(server.connectionCount, 0);
 }
 
 // Nadie escucha en ese puerto: es lo que pasa si koboldcpp no está corriendo.
@@ -465,7 +767,7 @@ void TestKoboldClient::unreachableServer()
     QSignalSpy finishedSpy(&client, &KoboldClient::generationFinished);
     QSignalSpy failedSpy(&client, &KoboldClient::generationFailed);
 
-    client.generate("hola");
+    client.generate(userSays("hola"));
     QVERIFY(client.generating());
 
     QTRY_COMPARE_WITH_TIMEOUT(failedSpy.count(), 1, WAIT_MS);
@@ -486,7 +788,7 @@ void TestKoboldClient::emptyBaseUrlFailsWithoutNetwork()
     KoboldClient client;
     QSignalSpy failedSpy(&client, &KoboldClient::generationFailed);
 
-    client.generate("hola");
+    client.generate(userSays("hola"));
 
     // Sin esperar: el fallo es inmediato.
     QCOMPARE(failedSpy.count(), 1);
@@ -512,7 +814,7 @@ void TestKoboldClient::http503()
     QSignalSpy finishedSpy(&client, &KoboldClient::generationFinished);
     QSignalSpy failedSpy(&client, &KoboldClient::generationFailed);
 
-    client.generate("hola");
+    client.generate(userSays("hola"));
     QTRY_COMPARE_WITH_TIMEOUT(failedSpy.count(), 1, WAIT_MS);
 
     QVERIFY(!client.generating());
@@ -525,52 +827,73 @@ void TestKoboldClient::http503()
 
     // Segundo intento, ahora con el servidor respondiendo bien.
     server.responseHeaders = REAL_OK_HEADERS;
-    server.bodyChunks = realCaptureChunks();
+    server.bodyChunks = chatCaptureChunks();
 
-    client.generate("hola");
+    client.generate(userSays("hola"));
     // El error viejo se borra al empezar, no al terminar.
     QVERIFY(client.errorMessage().isEmpty());
 
     QTRY_COMPARE_WITH_TIMEOUT(finishedSpy.count(), 1, WAIT_MS);
-    QCOMPARE(joinTokens(tokenSpy), REAL_CAPTURE_TEXT);
+    QCOMPARE(joinTokens(tokenSpy), CHAT_CAPTURE_TEXT);
     QCOMPARE(failedSpy.count(), 1);
 }
 
-// El servidor manda unos tokens y cierra la conexión sin haber mandado nunca un
-// `finish_reason` (koboldcpp se murió a mitad de la respuesta). Eso es un
-// error, no un final: los tokens que llegaron se entregaron, pero se avisa que
-// el texto quedó cortado.
-void TestKoboldClient::connectionCutWithoutFinishReason()
+// El servidor manda tokens y cierra la conexión sin haber mandado ni el
+// finish_reason ni el `[DONE]` (koboldcpp se murió a mitad de la respuesta).
+// Eso es un error, no un final: los tokens que llegaron se entregaron, pero se
+// avisa que el texto quedó cortado. Dos variantes: cortado a mitad de un
+// evento, y cortado justo después del último token (el texto está entero,
+// pero el cliente no tiene cómo saberlo).
+void TestKoboldClient::connectionCutWithoutEndMarker()
 {
-    FakeKoboldServer server;
-    QList<QByteArray> allChunks = realCaptureChunks();
-    // Los primeros 5 eventos (dos pedazos cada uno) y medio evento más, que
-    // queda sin terminar. mid(0, n) sobre una lista = sus primeros n elementos.
-    server.bodyChunks = allChunks.mid(0, 11);
+    QList<QByteArray> allChunks = chatCaptureChunks();
 
-    KoboldClient client;
-    client.setBaseUrl(server.baseUrl());
-    QSignalSpy tokenSpy(&client, &KoboldClient::tokenReceived);
-    QSignalSpy finishedSpy(&client, &KoboldClient::generationFinished);
-    QSignalSpy failedSpy(&client, &KoboldClient::generationFailed);
+    // Cada caso: cuántos pedazos manda el servidor antes de cerrar, y el texto
+    // que debe haber llegado. Los pedazos van de a dos por evento (ver
+    // chatCaptureChunks).
+    struct CutCase {
+        qsizetype chunkCount;
+        QString expectedText;
+    };
+    QList<CutCase> cases = {
+        // 5 eventos enteros y la línea `data:` del sexto, sin la línea vacía
+        // que lo cierra: ese sexto nunca se entrega.
+        {11, "El invierno se caracteriza"},
+        // Los 16 eventos con texto, y ni el finish_reason ni el `[DONE]`.
+        {CHAT_CAPTURE_TOKENS * 2, CHAT_CAPTURE_TEXT},
+    };
 
-    client.generate("hola");
-    QTRY_COMPARE_WITH_TIMEOUT(failedSpy.count(), 1, WAIT_MS);
+    for (const CutCase& cutCase : cases) {
+        FakeKoboldServer server;
+        // mid(0, n) sobre una lista = sus primeros n elementos.
+        server.bodyChunks = allChunks.mid(0, cutCase.chunkCount);
 
-    QCOMPARE(joinTokens(tokenSpy), QString("El invierno lleg"));
-    QCOMPARE(finishedSpy.count(), 0);
-    QVERIFY(!client.generating());
-    QVERIFY2(client.errorMessage().contains("se cortó"), qPrintable(client.errorMessage()));
+        KoboldClient client;
+        client.setBaseUrl(server.baseUrl());
+        QSignalSpy tokenSpy(&client, &KoboldClient::tokenReceived);
+        QSignalSpy finishedSpy(&client, &KoboldClient::generationFinished);
+        QSignalSpy failedSpy(&client, &KoboldClient::generationFailed);
+
+        client.generate(userSays("hola"));
+        QTRY_COMPARE_WITH_TIMEOUT(failedSpy.count(), 1, WAIT_MS);
+
+        QCOMPARE(joinTokens(tokenSpy), cutCase.expectedText);
+        QCOMPARE(finishedSpy.count(), 0);
+        QVERIFY(!client.generating());
+        QVERIFY2(client.errorMessage().contains("se cortó"), qPrintable(client.errorMessage()));
+    }
 }
 
-// Un evento cuyo `data:` no es JSON. Lo de antes se entrega, la generación
-// falla ahí, y lo que venga después se ignora.
+// Un evento cuyo `data:` no es JSON (y tampoco es `[DONE]`). Lo de antes se
+// entrega, la generación falla ahí, y lo que venga después se ignora.
 void TestKoboldClient::invalidJsonInEvent()
 {
     FakeKoboldServer server;
-    server.bodyChunks.append("event: message\ndata: {\"token\": \"bien\", \"finish_reason\": null}\n\n");
-    server.bodyChunks.append("event: message\ndata: {esto no es json\n\n");
-    server.bodyChunks.append("event: message\ndata: {\"token\": \"tarde\", \"finish_reason\": \"stop\"}\n\n");
+    server.bodyChunks.append(tokenEvent("bien"));
+    server.bodyChunks.append("data: {esto no es json\n\n");
+    server.bodyChunks.append(tokenEvent("tarde"));
+    server.bodyChunks.append(finishEvent("stop"));
+    server.bodyChunks.append(DONE_EVENT);
 
     KoboldClient client;
     client.setBaseUrl(server.baseUrl());
@@ -578,7 +901,7 @@ void TestKoboldClient::invalidJsonInEvent()
     QSignalSpy finishedSpy(&client, &KoboldClient::generationFinished);
     QSignalSpy failedSpy(&client, &KoboldClient::generationFailed);
 
-    client.generate("hola");
+    client.generate(userSays("hola"));
     QTRY_COMPARE_WITH_TIMEOUT(failedSpy.count(), 1, WAIT_MS);
 
     QVERIFY(!client.generating());
@@ -588,8 +911,8 @@ void TestKoboldClient::invalidJsonInEvent()
 
     // Tras el fallo el cliente corta la conexión por su cuenta. Se espera a que
     // del lado del servidor la conexión termine (porque notó el corte, o porque
-    // mandó todo y cerró él: lo que pase primero), para comprobar que el
-    // tercer evento, si llegó a salir, ya no produjo nada.
+    // mandó todo y cerró él: lo que pase primero), para comprobar que lo que
+    // venía detrás, si llegó a salir, ya no produjo nada.
     QTRY_VERIFY_WITH_TIMEOUT(!server.hasOpenConnection(), WAIT_MS);
     QCOMPARE(joinTokens(tokenSpy), QString("bien"));
     QCOMPARE(finishedSpy.count(), 0);
@@ -600,7 +923,7 @@ void TestKoboldClient::invalidJsonInEvent()
 void TestKoboldClient::secondGenerateWhileGeneratingIsIgnored()
 {
     FakeKoboldServer server;
-    server.bodyChunks = realCaptureChunks();
+    server.bodyChunks = chatCaptureChunks();
 
     KoboldClient client;
     client.setBaseUrl(server.baseUrl());
@@ -609,20 +932,20 @@ void TestKoboldClient::secondGenerateWhileGeneratingIsIgnored()
     QSignalSpy failedSpy(&client, &KoboldClient::generationFailed);
     QSignalSpy generatingSpy(&client, &KoboldClient::generatingChanged);
 
-    client.generate("primero");
+    client.generate(userSays("primero"));
 
     // KoboldClient avisa con un qWarning cuando ignora la llamada. Qt Test deja
     // declarar qué warning se espera; si no llegara, el test falla.
     QTest::ignoreMessage(QtWarningMsg,
                          "KoboldClient: generate() ignorado, ya hay una generación en curso.");
-    client.generate("segundo");
+    client.generate(userSays("segundo"));
     QVERIFY(client.generating());
 
     // Otra vez a mitad del stream, cuando ya llegaron algunos tokens.
     QTRY_VERIFY_WITH_TIMEOUT(tokenSpy.count() >= 3, WAIT_MS);
     QTest::ignoreMessage(QtWarningMsg,
                          "KoboldClient: generate() ignorado, ya hay una generación en curso.");
-    client.generate("tercero");
+    client.generate(userSays("tercero"));
 
     QTRY_COMPARE_WITH_TIMEOUT(finishedSpy.count(), 1, WAIT_MS);
 
@@ -632,19 +955,28 @@ void TestKoboldClient::secondGenerateWhileGeneratingIsIgnored()
     QCOMPARE(server.requestCount, 1);
     QVERIFY(server.lastRequestBody.contains("primero"));
     // Y la respuesta no se mezcló ni se duplicó.
-    QCOMPARE(joinTokens(tokenSpy), REAL_CAPTURE_TEXT);
+    QCOMPARE(joinTokens(tokenSpy), CHAT_CAPTURE_TEXT);
     QCOMPARE(generatingSpy.count(), 2);
     QCOMPARE(failedSpy.count(), 0);
 }
 
 // Volver a generar DESDE DENTRO del aviso de fin. Es "reentrancia" (ver el test
 // restartFromInsideFailedSignal de tst_processmanager.cpp): el slot corre
-// cuando KoboldClient todavía está a mitad de procesar el último evento de la
+// cuando KoboldClient todavía está a mitad de procesar el evento que cerró la
 // primera respuesta. Debe funcionar, y las dos respuestas no deben mezclarse.
+//
+// Es lo que hará la interfaz de chat: al terminar una respuesta, el usuario ya
+// puede mandar la siguiente. Se prueba con el cuerpo entero en una sola lectura,
+// el caso más exigente: el `[DONE]` de la primera respuesta queda en la misma
+// lista de eventos, detrás del finish_reason, cuando ya hay en curso una
+// generación nueva. No debe tomarse como el final de la segunda.
 void TestKoboldClient::generateAgainFromInsideFinishedSignal()
 {
+    // Por qué no debería aparecer: ver doneAfterFinishReasonIsNotASecondEnd.
+    QTest::failOnWarning(DONE_WITHOUT_REASON_WARNING);
+
     FakeKoboldServer server;
-    server.bodyChunks = realCaptureChunks();
+    server.bodyChunks.append(readChatCapture());
 
     KoboldClient client;
     client.setBaseUrl(server.baseUrl());
@@ -665,12 +997,12 @@ void TestKoboldClient::generateAgainFromInsideFinishedSignal()
             alreadyRepeated = true;
             // Al avisar que terminó, el cliente ya tiene que estar libre.
             QVERIFY(!client.generating());
-            client.generate("segunda vuelta");
+            client.generate(userSays("segunda vuelta"));
             QVERIFY(client.generating());
         }
     });
 
-    client.generate("primera vuelta");
+    client.generate(userSays("primera vuelta"));
     QTRY_COMPARE_WITH_TIMEOUT(finishedSpy.count(), 2, WAIT_MS);
 
     QVERIFY(alreadyRepeated);
@@ -678,9 +1010,11 @@ void TestKoboldClient::generateAgainFromInsideFinishedSignal()
     QCOMPARE(failedSpy.count(), 0);
     QCOMPARE(server.requestCount, 2);
     QVERIFY(server.lastRequestBody.contains("segunda vuelta"));
-    // Dos respuestas completas, una detrás de la otra.
-    QCOMPARE(tokenSpy.count(), REAL_CAPTURE_TOKENS * 2);
-    QCOMPARE(joinTokens(tokenSpy), REAL_CAPTURE_TEXT + REAL_CAPTURE_TEXT);
+    // Dos respuestas completas, una detrás de la otra, las dos con su motivo.
+    QCOMPARE(tokenSpy.count(), CHAT_CAPTURE_TOKENS * 2);
+    QCOMPARE(joinTokens(tokenSpy), CHAT_CAPTURE_TEXT + CHAT_CAPTURE_TEXT);
+    QCOMPARE(finishedSpy.at(0).at(0).toString(), QString("stop"));
+    QCOMPARE(finishedSpy.at(1).at(0).toString(), QString("stop"));
 }
 
 // Destruir el cliente con una respuesta a medio llegar: lo que pasa si se
@@ -693,9 +1027,10 @@ void TestKoboldClient::generateAgainFromInsideFinishedSignal()
 void TestKoboldClient::destroyClientMidStream()
 {
     FakeKoboldServer server;
-    QList<QByteArray> allChunks = realCaptureChunks();
-    // Unos pocos eventos, y después el servidor se queda callado con la
-    // conexión abierta: el cliente queda esperando en mitad del stream.
+    QList<QByteArray> allChunks = chatCaptureChunks();
+    // Unos pocos eventos (4, de a dos pedazos), y después el servidor se queda
+    // callado con la conexión abierta: el cliente queda esperando en mitad del
+    // stream.
     server.bodyChunks = allChunks.mid(0, 8);
     server.closeWhenDone = false;
     QSignalSpy disconnectedSpy(&server, &FakeKoboldServer::clientDisconnected);
@@ -713,7 +1048,7 @@ void TestKoboldClient::destroyClientMidStream()
     QSignalSpy generatingSpy(client, &KoboldClient::generatingChanged);
     QSignalSpy errorSpy(client, &KoboldClient::errorMessageChanged);
 
-    client->generate("hola");
+    client->generate(userSays("hola"));
     QTRY_COMPARE_WITH_TIMEOUT(tokenSpy.count(), 4, WAIT_MS);
     QVERIFY(client->generating());
     // Hasta aquí, un solo cambio de `generating`: a verdadero.

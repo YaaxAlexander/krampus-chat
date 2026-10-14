@@ -1,10 +1,15 @@
 // KoboldClient.h — declaración del cliente HTTP que habla con koboldcpp.
 //
-// Única responsabilidad: la CONVERSACIÓN por HTTP. Manda un prompt y va
+// Única responsabilidad: el HTTP. Manda una lista de mensajes de chat y va
 // avisando de cada token que el servidor devuelve. No lanza ni vigila ningún
 // proceso (eso es ProcessManager) y no sabe si el servidor lo arrancó Krampus o
 // ya estaba corriendo: solo conoce una URL. Por eso el mismo cliente servirá
 // para el modo "attach" de la Fase 2.
+//
+// Tampoco guarda la conversación: no recuerda qué se dijo antes. Quien lo usa
+// le pasa el historial completo en cada llamada. Así el cliente no tiene estado
+// que se pueda desincronizar con lo que se ve en pantalla, y guardar o cargar
+// conversaciones (Fase 3) no tiene que tocar esta clase.
 //
 // Este archivo es el header: DECLARA la clase. El código de los métodos está en
 // KoboldClient.cpp. (Por qué C++ parte las clases en dos archivos: ver la
@@ -21,6 +26,7 @@
 
 #include <QObject>
 #include <QString>
+#include <QVariantList>
 // De aquí sale el macro QML_ELEMENT (ver abajo).
 #include <QtQmlIntegration/qqmlintegration.h>
 
@@ -57,7 +63,7 @@ class KoboldClient : public QObject
     // usa el cliente; esta clase no asume ni la máquina ni el puerto.
     Q_PROPERTY(QString baseUrl READ baseUrl WRITE setBaseUrl NOTIFY baseUrlChanged)
 
-    // Verdadero desde que se manda un prompt hasta que la respuesta termina,
+    // Verdadero desde que se manda la conversación hasta que la respuesta termina,
     // bien o mal. La UI lo usa para no dejar mandar otro mientras tanto.
     Q_PROPERTY(bool generating READ generating NOTIFY generatingChanged)
 
@@ -95,14 +101,30 @@ public:
 
     // Q_INVOKABLE hace que el método se pueda llamar desde QML.
     //
-    // Manda el prompt TAL CUAL a `<baseUrl>/api/extra/generate/stream`. No
-    // espera la respuesta: regresa enseguida, y lo que venga llega por las
-    // signals de abajo. Si ya hay una generación en curso no hace nada (solo
-    // avisa en el log).
+    // Manda la conversación a `<baseUrl>/v1/chat/completions` y pide la
+    // respuesta en streaming. koboldcpp aplica la plantilla de chat del modelo
+    // cargado (los `<|start_header_id|>` de Llama 3, por ejemplo): Krampus
+    // nunca arma plantillas. No espera la respuesta: regresa enseguida, y lo
+    // que venga llega por las signals de abajo. Si ya hay una generación en
+    // curso no hace nada (solo avisa en el log).
     //
-    // El prompt va crudo, sin plantilla de chat: armar el formato que cada
-    // modelo espera es trabajo de fases posteriores.
-    Q_INVOKABLE void generate(const QString& prompt);
+    // `messages` es la conversación entera, en orden. Cada elemento es un
+    // "diccionario" con dos claves de texto: `role` ("user", "assistant" o
+    // "system") y `content`. Si la lista está vacía o algún mensaje no tiene
+    // esa forma, la generación falla en el momento, sin tocar la red.
+    //
+    // QVariantList = una lista de QVariant, y un QVariant es una "caja" que
+    // puede guardar un valor de cualquier tipo. Es lo más cercano a una `list`
+    // de Python, donde cada elemento puede ser de un tipo distinto. Es el tipo
+    // en el que Qt convierte solo un arreglo de JavaScript al pasarlo desde
+    // QML: `koboldClient.generate([{role: "user", content: "hola"}])` llega
+    // aquí como una lista cuyo elemento es una caja con un QVariantMap (el
+    // `dict` de Qt: claves de texto, valores QVariant).
+    //
+    // Alternativa descartada: QJsonArray, que es justo lo que se va a mandar.
+    // QML también lo acepta, pero QVariantList es el tipo "de siempre" para
+    // recibir arreglos de JS y no ata la interfaz con QML al formato de la red.
+    Q_INVOKABLE void generate(const QVariantList& messages);
 
     // PENDIENTE (Fase 3): cancelar una generación (POST /api/extra/abort),
     // samplers (temp, top_p...), /api/extra/tokencount y /api/extra/perf.
@@ -127,8 +149,9 @@ signals:
     void tokenReceived(const QString& token);
 
     // La generación terminó bien. `finishReason` es el motivo que dio el
-    // servidor: "length" (se llegó al máximo de tokens) o "stop" (el modelo
-    // decidió terminar).
+    // servidor: "stop" (el modelo terminó su turno) o "length" (se llegó al
+    // máximo de tokens). Vacío si el servidor cerró el stream con `[DONE]` sin
+    // haber dado un motivo (ver handleEvent en el .cpp).
     void generationFinished(const QString& finishReason);
 
     // La generación terminó mal. `message` es el mismo texto que queda en
@@ -145,8 +168,11 @@ private:
 
     // Lee lo que haya llegado, lo pasa al parser SSE y atiende cada evento.
     void processAvailableData();
-    // Interpreta el JSON de un evento ya completo.
+    // Interpreta un evento ya completo: un JSON con un pedazo de respuesta, o
+    // la marca `[DONE]`.
     void handleEvent(const SseEvent& event);
+    // Da la generación por terminada bien, con ese motivo.
+    void finish(const QString& finishReason);
 
     // Suelta la respuesta HTTP en curso y baja `generating`. Todos los finales
     // de una generación, buenos o malos, pasan por aquí: es lo que garantiza
