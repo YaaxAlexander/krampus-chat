@@ -1,21 +1,24 @@
-// Main.qml — la ventana principal de Krampus. Fea a propósito: por ahora solo
-// permite cargar un modelo, ver en qué estado está koboldcpp y detenerlo.
+// Main.qml — la ventana principal de Krampus. Fea a propósito: por ahora
+// permite cargar un modelo, ver en qué estado está koboldcpp, detenerlo, y
+// mandarle un prompt para ver la respuesta aparecer token por token.
 //
 // QML es un lenguaje declarativo: aquí no se escriben pasos ("crea una ventana,
 // luego ponle un texto"), se describe el árbol de objetos que debe existir y Qt
 // lo construye. La lógica de verdad (procesos, HTTP) vive en C++ y se asoma aquí
 // como propiedades y signals; este archivo solo describe lo que se ve.
 //
-// Regla de arquitectura: este archivo NUNCA lanza procesos. Solo habla con
-// ProcessManager: lee sus propiedades y llama a start() / stop().
+// Regla de arquitectura: este archivo NUNCA lanza procesos ni hace HTTP. Solo
+// habla con ProcessManager y KoboldClient: lee sus propiedades, llama a sus
+// métodos y reacciona a sus signals.
 
 // Los `import` de QML funcionan como los de Python: traen los tipos de un módulo.
 // QtQuick trae lo básico (Item, anchors...), QtQuick.Controls los controles ya
 // hechos (ApplicationWindow, Label, botones) y QtQuick.Layouts los contenedores
 // que acomodan a sus hijos en fila o en columna.
 //
-// `ProcessManager` no necesita import: está registrado en el módulo `Krampus`,
-// que es el mismo al que pertenece este archivo (ver CMakeLists.txt).
+// `ProcessManager` y `KoboldClient` no necesitan import: están registrados en el
+// módulo `Krampus`, que es el mismo al que pertenece este archivo (ver
+// CMakeLists.txt).
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -53,6 +56,47 @@ ApplicationWindow {
     // el que se encarga de que koboldcpp muera en ese momento.
     ProcessManager {
         id: processManager
+    }
+
+    // El objeto de C++ que habla por HTTP con koboldcpp (ver
+    // src/backend/KoboldClient.h). Mismo ownership que el de arriba.
+    KoboldClient {
+        id: koboldClient
+
+        // La dirección se arma con el puerto de arriba, para que el número
+        // siga escrito en un solo lugar. Es la misma máquina porque en este
+        // modo a koboldcpp lo lanza Krampus; el cliente en sí acepta cualquier
+        // URL (hará falta para el modo "attach" de la Fase 2).
+        baseUrl: "http://localhost:" + window.koboldPort
+
+        // Signal handler: corre cada vez que el cliente emite `tokenReceived`.
+        // La forma `function(token) { }` le pone nombre al argumento de la
+        // signal para poder usarlo adentro.
+        onTokenReceived: function(token) {
+            // insert(posición, texto) con la posición del final AGREGA el
+            // token a lo que ya había. La alternativa obvia,
+            // `outputArea.text += token`, arma el texto completo de nuevo por
+            // cada token y obliga a redibujarlo entero: con respuestas largas
+            // el trabajo crece con el cuadrado del largo.
+            outputArea.insert(outputArea.length, token)
+            // Mover el cursor al final hace que la vista siga al texto nuevo.
+            outputArea.cursorPosition = outputArea.length
+        }
+    }
+
+    // Manda el prompt escrito. Es una función de JavaScript definida dentro de
+    // la ventana; existe porque hay dos formas de enviar (el botón y la tecla
+    // Enter) y las dos tienen que hacer exactamente lo mismo.
+    function sendPrompt() {
+        // Enter llega aquí aunque el botón esté deshabilitado, así que se
+        // comprueba lo mismo que el botón.
+        if (!sendButton.enabled) {
+            return
+        }
+        // Cada envío empieza con la salida vacía: no es un chat todavía, cada
+        // prompt es independiente del anterior.
+        outputArea.clear()
+        koboldClient.generate(promptField.text)
     }
 
     // ColumnLayout apila a sus hijos de arriba hacia abajo. La alternativa,
@@ -206,6 +250,70 @@ ApplicationWindow {
             wrapMode: Text.Wrap
         }
 
+        // Fila del prompt: texto + botón.
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: 8
+
+            TextField {
+                id: promptField
+                Layout.fillWidth: true
+                placeholderText: "Prompt (se manda tal cual, sin formato de chat)"
+                // Mientras se genera no se edita: el prompt a la vista es el
+                // que produjo la respuesta que está llegando.
+                enabled: !koboldClient.generating
+                // `accepted` se emite al apretar Enter dentro del campo.
+                onAccepted: window.sendPrompt()
+            }
+
+            Button {
+                id: sendButton
+                text: koboldClient.generating ? "Generando…" : "Enviar"
+                // Solo se puede enviar con el servidor listo, sin otra
+                // generación en curso y con algo escrito.
+                enabled: processManager.state === ProcessManager.Ready
+                         && !koboldClient.generating
+                         && promptField.text.length > 0
+                onClicked: window.sendPrompt()
+            }
+        }
+
+        // El error del cliente HTTP, si la última generación falló. En negrita
+        // y no en rojo por la misma razón que el error de arriba.
+        Label {
+            Layout.fillWidth: true
+            visible: koboldClient.errorMessage.length > 0
+            text: koboldClient.errorMessage
+            font.bold: true
+            wrapMode: Text.Wrap
+        }
+
+        Label {
+            text: "Respuesta:"
+        }
+
+        // El texto generado, sin formato. Los tokens se agregan al final desde
+        // el handler `onTokenReceived` de más arriba.
+        ScrollView {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            // Hay dos áreas que quieren todo el alto sobrante: esta y la del
+            // log. El "stretch factor" dice cómo repartirlo: con 2 aquí y 1
+            // allá, esta se queda con dos tercios. Sin esto el reparto depende
+            // de cuánto texto tenga cada una y las áreas cambian de tamaño
+            // mientras llegan los tokens.
+            Layout.verticalStretchFactor: 2
+
+            TextArea {
+                id: outputArea
+                readOnly: true
+                wrapMode: TextEdit.Wrap
+                // Sin esto el área interpretaría como formato un texto que
+                // parezca HTML; la respuesta del modelo se muestra literal.
+                textFormat: TextEdit.PlainText
+            }
+        }
+
         Label {
             text: "Salida de koboldcpp (últimas líneas):"
         }
@@ -214,9 +322,10 @@ ApplicationWindow {
         // le pone barras de desplazamiento a lo que contiene.
         ScrollView {
             Layout.fillWidth: true
-            // fillHeight: este es el elemento que se queda con todo el alto que
-            // sobre en la columna.
+            // fillHeight: este elemento se reparte el alto que sobre en la
+            // columna con el área de la respuesta (ver el stretch factor allá).
             Layout.fillHeight: true
+            Layout.verticalStretchFactor: 1
 
             // TextArea de solo lectura y no un Label: así el texto se puede
             // seleccionar y copiar, que es lo que uno quiere hacer con un error.

@@ -346,8 +346,8 @@ void ProcessManager::onReadyRead()
 //   3. Lo que sobra (una línea a medias, sin su '\n') SE QUEDA en el buffer
 //      esperando a que la próxima lectura traiga el resto.
 //
-// Es el mismo patrón que usará el parser SSE de KoboldClient; lo único que
-// cambia es el separador (allá un evento termina en "\n\n").
+// Es el mismo patrón que usa SseParser para el streaming de tokens: allá
+// también se corta por líneas, y una línea vacía marca el fin de un evento.
 void ProcessManager::readAvailableOutput()
 {
     // readAllStandardOutput() devuelve todo lo disponible y lo saca de la cola

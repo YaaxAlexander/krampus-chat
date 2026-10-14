@@ -16,6 +16,42 @@
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 
+// Lista de fugas de memoria que LeakSanitizer debe callarse.
+//
+// El build de Debug lleva AddressSanitizer, que al salir del programa revisa
+// qué memoria quedó sin liberar e imprime un reporte. En Wayland, en cuanto se
+// usa el teclado, ese reporte se llena con unos 160 KB que NO son nuestros: la
+// librería del mapa de teclado (libxkbcommon), llamada por el plugin Wayland de
+// Qt, no libera sus datos al cerrar. Es inofensivo (el sistema recupera toda la
+// memoria cuando el proceso termina), pero ese ruido taparía una fuga real de
+// Krampus, que es justo lo que queremos ver.
+//
+// Cómo funciona: LeakSanitizer busca en el programa una función con este nombre
+// exacto y, si existe, la llama para pedir la lista. Cada línea `leak:TEXTO`
+// silencia las fugas cuyo rastro de llamadas pase por algo que contenga TEXTO.
+// Krampus nunca llama a libxkbcommon directamente, así que esto no puede
+// esconder un error nuestro. Verificado el 2026-10-12: los 19 bloques del
+// reporte pasaban todos por esa librería.
+//
+// Alternativa descartada: un archivo de supresiones aparte. Hay que pasarlo con
+// la variable de entorno LSAN_OPTIONS en cada ejecución, y es fácil olvidarla.
+//
+// `extern "C"` le dice al compilador que no "decore" el nombre de la función.
+// C++ añade al nombre información de los tipos de los parámetros (para permitir
+// varias funciones con el mismo nombre); con eso LeakSanitizer, que la busca
+// por su nombre a secas, no la encontraría.
+//
+// `const char*` = puntero a un texto estilo C que prometemos no modificar. El
+// texto entre comillas vive dentro del ejecutable durante todo el programa, así
+// que devolver su dirección es seguro: nadie tiene que liberarlo.
+//
+// En un build Release (sin sanitizers) nadie llama a esta función; sobra pero
+// no estorba, y así evitamos compilación condicional.
+extern "C" const char* __lsan_default_suppressions()
+{
+    return "leak:libxkbcommon.so\n";
+}
+
 // En Python un script se ejecuta de arriba a abajo. En C++ no: el programa
 // SIEMPRE empieza en una función llamada `main`, y el código suelto fuera de
 // funciones no está permitido.

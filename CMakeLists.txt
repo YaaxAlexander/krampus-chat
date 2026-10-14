@@ -64,10 +64,8 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # mensaje legible en vez de fallar más adelante con errores raros.
 #   Core    : lo básico (QString, QObject, el bucle de eventos).
 #   Quick   : Qt Quick, el motor que dibuja la UI escrita en QML.
-#   Network : cliente HTTP. TODAVÍA no se usa en el código; se pide ya porque el
-#             plan de la Fase 1 lo necesita para KoboldClient
-#             (QNetworkAccessManager), y así un Qt sin Network instalado se
-#             detecta ahora, en el scaffold, y no a mitad de escribir el cliente.
+#   Network : cliente HTTP (QNetworkAccessManager). Lo usa KoboldClient para
+#             hablar con koboldcpp.
 #   Test    : Qt Test, el framework de tests (el `unittest` de Qt). Solo lo usa
 #             el ejecutable de tests, no la app. Viene en el paquete qt6-base.
 find_package(Qt6 REQUIRED COMPONENTS Core Quick Network Test)
@@ -144,12 +142,16 @@ add_link_options(
 # Solo se listan los .cpp: los headers (.h) no se compilan por separado, se
 # "pegan" dentro de cada .cpp que hace #include de ellos.
 #
-# La excepción es ProcessManager.h: se lista porque tiene una clase con Q_OBJECT
-# y AUTOMOC necesita saber que existe para correr `moc` sobre él.
+# La excepción son ProcessManager.h y KoboldClient.h: se listan porque tienen
+# una clase con Q_OBJECT y AUTOMOC necesita saber que existen para correr `moc`
+# sobre ellos. SseParser.h no se lista: es una clase de C++ a secas.
 qt_add_executable(krampus
     src/main.cpp
     src/backend/ProcessManager.h
     src/backend/ProcessManager.cpp
+    src/backend/KoboldClient.h
+    src/backend/KoboldClient.cpp
+    src/backend/SseParser.cpp
 )
 
 # Carpeta donde buscar nuestros headers, para poder escribir
@@ -175,8 +177,8 @@ target_include_directories(krampus PRIVATE src/backend)
 #
 # Los tipos de C++ también entran al módulo por aquí, aunque no se listen: Qt
 # revisa los fuentes del target `krampus` y registra como tipo de QML toda clase
-# marcada con QML_ELEMENT (hoy, ProcessManager). Por eso Main.qml puede escribir
-# `ProcessManager { }` sin ningún código de registro en main.cpp.
+# marcada con QML_ELEMENT (hoy, ProcessManager y KoboldClient). Por eso Main.qml
+# puede escribir `ProcessManager { }` sin ningún código de registro en main.cpp.
 qt_add_qml_module(krampus
     URI Krampus
     VERSION 1.0
@@ -203,9 +205,14 @@ target_link_libraries(krampus PRIVATE
 #   ctest --test-dir build --output-on-failure
 enable_testing()
 
-# Los tests son un ejecutable aparte, con su propio main() (lo escribe el macro
-# QTEST_GUILESS_MAIN). Se compila siempre junto con la app: es poco código y
-# así no se puede romper sin que el build lo note.
+# Cada archivo de tests es un ejecutable aparte, con su propio main() (lo
+# escribe el macro QTEST_GUILESS_MAIN). Se compilan siempre junto con la app: es
+# poco código y así no se pueden romper sin que el build lo note.
+#
+# Son tres ejecutables y no uno solo porque Qt Test está pensado así (una clase
+# de tests por programa), y porque cada uno enlaza solo lo que prueba: si el
+# test del parser SSE necesitara la red para compilar, sería señal de que el
+# parser dejó de ser independiente.
 #
 # El test compila ProcessManager.cpp OTRA VEZ, dentro de su propio ejecutable.
 # La alternativa habitual es sacar el backend a una librería estática (código
@@ -216,7 +223,9 @@ enable_testing()
 # (qt_generate_foreign_qml_types, o un segundo módulo QML con su plugin) más
 # enredado que compilar dos veces un archivo. Las dos compilaciones usan los
 # mismos flags, porque los warnings y ASan están puestos para todo el archivo.
-# Cuando el backend tenga varios .cpp convendrá volver a mirarlo.
+# Cuando el backend tenga varios .cpp convendrá volver a mirarlo. (Hoy son
+# tres, y el único que se compila tres veces es SseParser.cpp, que es chico.
+# Sigue sin compensar el enredo.)
 qt_add_executable(tst_processmanager
     tests/tst_processmanager.cpp
     src/backend/ProcessManager.h
@@ -247,3 +256,50 @@ target_compile_definitions(tst_processmanager PRIVATE
 # Le cuenta a CTest que existe un test llamado `processmanager` y que correrlo
 # es ejecutar ese programa; si el programa devuelve 0, el test pasó.
 add_test(NAME processmanager COMMAND tst_processmanager)
+
+# --- Test del parser SSE ---
+# Solo SseParser.cpp: no usa red ni QML, así que alcanza con Core y Test.
+qt_add_executable(tst_sseparser
+    tests/tst_sseparser.cpp
+    src/backend/SseParser.cpp
+)
+
+target_include_directories(tst_sseparser PRIVATE src/backend)
+
+target_link_libraries(tst_sseparser PRIVATE
+    Qt6::Core
+    Qt6::Test
+)
+
+# El test lee logs/sse-raw.txt (la respuesta real capturada) desde el repo.
+target_compile_definitions(tst_sseparser PRIVATE
+    KRAMPUS_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
+)
+
+add_test(NAME sseparser COMMAND tst_sseparser)
+
+# --- Test del cliente HTTP ---
+# KoboldClient usa a SseParser, así que van los dos .cpp. Este sí necesita
+# Qt6::Network: por el cliente, y por el servidor HTTP falso que el propio test
+# levanta en 127.0.0.1 (no usa el koboldcpp real, que necesita GPU).
+qt_add_executable(tst_koboldclient
+    tests/tst_koboldclient.cpp
+    src/backend/KoboldClient.h
+    src/backend/KoboldClient.cpp
+    src/backend/SseParser.cpp
+)
+
+target_include_directories(tst_koboldclient PRIVATE src/backend)
+
+target_link_libraries(tst_koboldclient PRIVATE
+    Qt6::Core
+    Qt6::Network
+    Qt6::QmlIntegration
+    Qt6::Test
+)
+
+target_compile_definitions(tst_koboldclient PRIVATE
+    KRAMPUS_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
+)
+
+add_test(NAME koboldclient COMMAND tst_koboldclient)

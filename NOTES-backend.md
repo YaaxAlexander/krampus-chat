@@ -150,7 +150,7 @@ data: {"token": " inv", "finish_reason": null}
 - Un token por evento. El JSON de `data:` trae `token` y `finish_reason`.
 - **Fin del stream:** un último evento con `"token": ""` y `finish_reason`
   distinto de `null` (`"length"` al agotar `max_length`). No hay `[DONE]`.
-- Los caracteres no ASCII vienen escapados dentro del JSON (`"ío"` = "ío"),
+- Los caracteres no ASCII vienen escapados dentro del JSON (`"\u00edo"` = "ío"),
   así que un corte de lectura nunca parte un carácter UTF-8 por la mitad.
 - La respuesta es `HTTP/1.0` con `content-type: text/event-stream`, sin
   `Content-Length`.
