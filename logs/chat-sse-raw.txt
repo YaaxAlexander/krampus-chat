@@ -1,0 +1,36 @@
+data: {"id": "chatcmpl-A372044", "object": "chat.completion.chunk", "created": 1791957672, "model": "koboldcpp/Llama-3.2-3B-Instruct-Q4_K_M", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": "El"}}]}
+
+data: {"id": "chatcmpl-A372044", "object": "chat.completion.chunk", "created": 1791957672, "model": "koboldcpp/Llama-3.2-3B-Instruct-Q4_K_M", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " inv"}}]}
+
+data: {"id": "chatcmpl-A372044", "object": "chat.completion.chunk", "created": 1791957672, "model": "koboldcpp/Llama-3.2-3B-Instruct-Q4_K_M", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": "ierno"}}]}
+
+data: {"id": "chatcmpl-A372044", "object": "chat.completion.chunk", "created": 1791957672, "model": "koboldcpp/Llama-3.2-3B-Instruct-Q4_K_M", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " se caracter"}}]}
+
+data: {"id": "chatcmpl-A372044", "object": "chat.completion.chunk", "created": 1791957672, "model": "koboldcpp/Llama-3.2-3B-Instruct-Q4_K_M", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": "iza"}}]}
+
+data: {"id": "chatcmpl-A372044", "object": "chat.completion.chunk", "created": 1791957672, "model": "koboldcpp/Llama-3.2-3B-Instruct-Q4_K_M", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " por"}}]}
+
+data: {"id": "chatcmpl-A372044", "object": "chat.completion.chunk", "created": 1791957672, "model": "koboldcpp/Llama-3.2-3B-Instruct-Q4_K_M", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " temper"}}]}
+
+data: {"id": "chatcmpl-A372044", "object": "chat.completion.chunk", "created": 1791957672, "model": "koboldcpp/Llama-3.2-3B-Instruct-Q4_K_M", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": "aturas"}}]}
+
+data: {"id": "chatcmpl-A372044", "object": "chat.completion.chunk", "created": 1791957672, "model": "koboldcpp/Llama-3.2-3B-Instruct-Q4_K_M", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " b"}}]}
+
+data: {"id": "chatcmpl-A372044", "object": "chat.completion.chunk", "created": 1791957672, "model": "koboldcpp/Llama-3.2-3B-Instruct-Q4_K_M", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": "ajas"}}]}
+
+data: {"id": "chatcmpl-A372044", "object": "chat.completion.chunk", "created": 1791957672, "model": "koboldcpp/Llama-3.2-3B-Instruct-Q4_K_M", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " y"}}]}
+
+data: {"id": "chatcmpl-A372044", "object": "chat.completion.chunk", "created": 1791957673, "model": "koboldcpp/Llama-3.2-3B-Instruct-Q4_K_M", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " d\u00edas"}}]}
+
+data: {"id": "chatcmpl-A372044", "object": "chat.completion.chunk", "created": 1791957673, "model": "koboldcpp/Llama-3.2-3B-Instruct-Q4_K_M", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " cort"}}]}
+
+data: {"id": "chatcmpl-A372044", "object": "chat.completion.chunk", "created": 1791957673, "model": "koboldcpp/Llama-3.2-3B-Instruct-Q4_K_M", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": "os"}}]}
+
+data: {"id": "chatcmpl-A372044", "object": "chat.completion.chunk", "created": 1791957673, "model": "koboldcpp/Llama-3.2-3B-Instruct-Q4_K_M", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": " de luz"}}]}
+
+data: {"id": "chatcmpl-A372044", "object": "chat.completion.chunk", "created": 1791957673, "model": "koboldcpp/Llama-3.2-3B-Instruct-Q4_K_M", "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": "."}}]}
+
+data: {"id": "chatcmpl-A372044", "object": "chat.completion.chunk", "created": 1791957673, "model": "koboldcpp/Llama-3.2-3B-Instruct-Q4_K_M", "choices": [{"index": 0, "finish_reason": "stop", "delta": {"role": "assistant", "content": ""}}]}
+
+data: [DONE]
+

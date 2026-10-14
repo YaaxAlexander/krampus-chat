@@ -133,8 +133,14 @@ a través de propiedades y signals expuestos con `Q_PROPERTY` / `Q_INVOKABLE`.
 
 ### Endpoints de koboldcpp
 
+- `POST /v1/chat/completions` con `"stream": true` — SSE estilo OpenAI, token
+  por token (el que usamos). koboldcpp aplica la plantilla de chat del modelo
+  cargado, así que Krampus manda mensajes con rol y nunca arma plantillas.
+  Acepta también los samplers nativos (`min_p`, `rep_pen`, `top_k`...).
+  Formato medido en `NOTES-backend.md`, sección "Endpoint de chat".
 - `POST /api/v1/generate` — generación bloqueante
-- `POST /api/extra/generate/stream` — SSE, token por token (el que usamos)
+- `POST /api/extra/generate/stream` — SSE de texto crudo, sin plantilla de chat
+  (lo usó la primera versión; el modelo solo continuaba el texto)
 - `POST /api/extra/abort` — cancelar
 - `POST /api/extra/tokencount` — contador de contexto
 - `GET  /api/extra/perf` — tok/s, stats

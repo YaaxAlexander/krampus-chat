@@ -1,0 +1,140 @@
+* Host localhost:5001 was resolved.
+* IPv6: ::1
+* IPv4: 127.0.0.1
+*   Trying [::1]:5001...
+* Established connection to localhost (::1 port 5001) from ::1 port 46282 
+* using HTTP/1.x
+=> Send header, 151 bytes (0x97)
+0000: POST /v1/chat/completions HTTP/1.1
+0024: Host: localhost:5001
+003a: User-Agent: curl/8.22.0
+0053: Accept: */*
+0060: Content-Type: application/json
+0080: Content-Length: 238
+0095: 
+=> Send data, 238 bytes (0xee)
+0000: {"messages":[{"role":"system","content":"Eres un asistente breve
+0040: ."},{"role":"user","content":"Escribe una frase corta sobre el i
+0080: nvierno."}],"max_tokens":40,"stream":true,"temperature":0.7,"top
+00c0: _p":0.9,"top_k":40,"min_p":0.05,"rep_pen":1.1}
+* upload completely sent off: 238 bytes
+* HTTP 1.0, assume close after body
+<= Recv header, 17 bytes (0x11)
+0000: HTTP/1.0 200 OK
+<= Recv header, 27 bytes (0x1b)
+0000: Server: KoboldCppServer 1
+<= Recv header, 37 bytes (0x25)
+0000: Date: Wed, 14 Oct 2026 06:01:11 GMT
+<= Recv header, 23 bytes (0x17)
+0000: X-Accel-Buffering: no
+<= Recv header, 25 bytes (0x19)
+0000: cache-control: no-cache
+* HTTP/1.0 connection set to keep alive
+<= Recv header, 24 bytes (0x18)
+0000: connection: keep-alive
+<= Recv header, 32 bytes (0x20)
+0000: access-control-allow-origin: *
+<= Recv header, 33 bytes (0x21)
+0000: access-control-allow-methods: *
+<= Recv header, 228 bytes (0xe4)
+0000: access-control-allow-headers: *, Accept, Content-Type, Content-L
+0040: ength, Cache-Control, Accept-Encoding, X-CSRF-Token, Client-Agen
+0080: t, X-Fields, Content-Type, Authorization, X-Requested-With, X-HT
+00c0: TP-Method-Override, apikey, genkey
+<= Recv header, 44 bytes (0x2c)
+0000: access-control-allow-private-network: true
+<= Recv header, 25 bytes (0x19)
+0000: cache-control: no-store
+<= Recv header, 33 bytes (0x21)
+0000: content-type: text/event-stream
+<= Recv header, 2 bytes (0x2)
+0000: 
+<= Recv data, 242 bytes (0xf2)
+0000: data: {"id": "chatcmpl-A372044", "object": "chat.completion.chun
+0040: k", "created": 1791957672, "model": "koboldcpp/Llama-3.2-3B-Inst
+0080: ruct-Q4_K_M", "choices": [{"index": 0, "finish_reason": null, "d
+00c0: elta": {"role": "assistant", "content": "El"}}]}..
+<= Recv data, 244 bytes (0xf4)
+0000: data: {"id": "chatcmpl-A372044", "object": "chat.completion.chun
+0040: k", "created": 1791957672, "model": "koboldcpp/Llama-3.2-3B-Inst
+0080: ruct-Q4_K_M", "choices": [{"index": 0, "finish_reason": null, "d
+00c0: elta": {"role": "assistant", "content": " inv"}}]}..
+<= Recv data, 245 bytes (0xf5)
+0000: data: {"id": "chatcmpl-A372044", "object": "chat.completion.chun
+0040: k", "created": 1791957672, "model": "koboldcpp/Llama-3.2-3B-Inst
+0080: ruct-Q4_K_M", "choices": [{"index": 0, "finish_reason": null, "d
+00c0: elta": {"role": "assistant", "content": "ierno"}}]}..
+<= Recv data, 252 bytes (0xfc)
+0000: data: {"id": "chatcmpl-A372044", "object": "chat.completion.chun
+0040: k", "created": 1791957672, "model": "koboldcpp/Llama-3.2-3B-Inst
+0080: ruct-Q4_K_M", "choices": [{"index": 0, "finish_reason": null, "d
+00c0: elta": {"role": "assistant", "content": " se caracter"}}]}..
+<= Recv data, 243 bytes (0xf3)
+0000: data: {"id": "chatcmpl-A372044", "object": "chat.completion.chun
+0040: k", "created": 1791957672, "model": "koboldcpp/Llama-3.2-3B-Inst
+0080: ruct-Q4_K_M", "choices": [{"index": 0, "finish_reason": null, "d
+00c0: elta": {"role": "assistant", "content": "iza"}}]}..
+<= Recv data, 244 bytes (0xf4)
+0000: data: {"id": "chatcmpl-A372044", "object": "chat.completion.chun
+0040: k", "created": 1791957672, "model": "koboldcpp/Llama-3.2-3B-Inst
+0080: ruct-Q4_K_M", "choices": [{"index": 0, "finish_reason": null, "d
+00c0: elta": {"role": "assistant", "content": " por"}}]}..
+<= Recv data, 247 bytes (0xf7)
+0000: data: {"id": "chatcmpl-A372044", "object": "chat.completion.chun
+0040: k", "created": 1791957672, "model": "koboldcpp/Llama-3.2-3B-Inst
+0080: ruct-Q4_K_M", "choices": [{"index": 0, "finish_reason": null, "d
+00c0: elta": {"role": "assistant", "content": " temper"}}]}..
+<= Recv data, 246 bytes (0xf6)
+0000: data: {"id": "chatcmpl-A372044", "object": "chat.completion.chun
+0040: k", "created": 1791957672, "model": "koboldcpp/Llama-3.2-3B-Inst
+0080: ruct-Q4_K_M", "choices": [{"index": 0, "finish_reason": null, "d
+00c0: elta": {"role": "assistant", "content": "aturas"}}]}..
+<= Recv data, 242 bytes (0xf2)
+0000: data: {"id": "chatcmpl-A372044", "object": "chat.completion.chun
+0040: k", "created": 1791957672, "model": "koboldcpp/Llama-3.2-3B-Inst
+0080: ruct-Q4_K_M", "choices": [{"index": 0, "finish_reason": null, "d
+00c0: elta": {"role": "assistant", "content": " b"}}]}..
+<= Recv data, 244 bytes (0xf4)
+0000: data: {"id": "chatcmpl-A372044", "object": "chat.completion.chun
+0040: k", "created": 1791957672, "model": "koboldcpp/Llama-3.2-3B-Inst
+0080: ruct-Q4_K_M", "choices": [{"index": 0, "finish_reason": null, "d
+00c0: elta": {"role": "assistant", "content": "ajas"}}]}..
+<= Recv data, 242 bytes (0xf2)
+0000: data: {"id": "chatcmpl-A372044", "object": "chat.completion.chun
+0040: k", "created": 1791957672, "model": "koboldcpp/Llama-3.2-3B-Inst
+0080: ruct-Q4_K_M", "choices": [{"index": 0, "finish_reason": null, "d
+00c0: elta": {"role": "assistant", "content": " y"}}]}..
+<= Recv data, 250 bytes (0xfa)
+0000: data: {"id": "chatcmpl-A372044", "object": "chat.completion.chun
+0040: k", "created": 1791957673, "model": "koboldcpp/Llama-3.2-3B-Inst
+0080: ruct-Q4_K_M", "choices": [{"index": 0, "finish_reason": null, "d
+00c0: elta": {"role": "assistant", "content": " d\u00edas"}}]}..
+<= Recv data, 245 bytes (0xf5)
+0000: data: {"id": "chatcmpl-A372044", "object": "chat.completion.chun
+0040: k", "created": 1791957673, "model": "koboldcpp/Llama-3.2-3B-Inst
+0080: ruct-Q4_K_M", "choices": [{"index": 0, "finish_reason": null, "d
+00c0: elta": {"role": "assistant", "content": " cort"}}]}..
+<= Recv data, 242 bytes (0xf2)
+0000: data: {"id": "chatcmpl-A372044", "object": "chat.completion.chun
+0040: k", "created": 1791957673, "model": "koboldcpp/Llama-3.2-3B-Inst
+0080: ruct-Q4_K_M", "choices": [{"index": 0, "finish_reason": null, "d
+00c0: elta": {"role": "assistant", "content": "os"}}]}..
+<= Recv data, 247 bytes (0xf7)
+0000: data: {"id": "chatcmpl-A372044", "object": "chat.completion.chun
+0040: k", "created": 1791957673, "model": "koboldcpp/Llama-3.2-3B-Inst
+0080: ruct-Q4_K_M", "choices": [{"index": 0, "finish_reason": null, "d
+00c0: elta": {"role": "assistant", "content": " de luz"}}]}..
+<= Recv data, 241 bytes (0xf1)
+0000: data: {"id": "chatcmpl-A372044", "object": "chat.completion.chun
+0040: k", "created": 1791957673, "model": "koboldcpp/Llama-3.2-3B-Inst
+0080: ruct-Q4_K_M", "choices": [{"index": 0, "finish_reason": null, "d
+00c0: elta": {"role": "assistant", "content": "."}}]}..
+<= Recv data, 242 bytes (0xf2)
+0000: data: {"id": "chatcmpl-A372044", "object": "chat.completion.chun
+0040: k", "created": 1791957673, "model": "koboldcpp/Llama-3.2-3B-Inst
+0080: ruct-Q4_K_M", "choices": [{"index": 0, "finish_reason": "stop", 
+00c0: "delta": {"role": "assistant", "content": ""}}]}..
+<= Recv data, 14 bytes (0xe)
+0000: data: [DONE]..
+<= Recv data, 0 bytes (0x0)
+* Connection #0 to host localhost:5001 left intact

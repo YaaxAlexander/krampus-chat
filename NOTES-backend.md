@@ -180,6 +180,62 @@ Con SIGTERM (lo que manda `QProcess::terminate()`) el proceso ya listo muere en
 intérprete de Python reemplaza al shell y conserva el mismo PID: no hay proceso
 hijo que pueda quedar huérfano al matar el PID que lanzó `QProcess`.
 
+## Endpoint de chat — 2026-10-14
+
+`/api/extra/generate/stream` manda el prompt tal cual, sin plantilla de chat:
+con un modelo Instruct el resultado es un autocompletado, no una respuesta.
+Krampus pasa a usar `POST /v1/chat/completions` con `"stream": true`.
+
+Captura: `logs/chat-sse-raw.txt` y `logs/chat-sse-trace.txt`.
+
+### Petición
+
+```json
+{"messages": [{"role": "system", "content": "..."},
+              {"role": "user", "content": "..."}],
+ "max_tokens": 40, "stream": true,
+ "temperature": 0.7, "top_p": 0.9, "top_k": 40, "min_p": 0.05, "rep_pen": 1.1}
+```
+
+- **koboldcpp aplica la plantilla.** Con `--debugmode 1` el log muestra el texto
+  realmente tokenizado: `<|start_header_id|>system<|end_header_id|>` ...
+  `<|eot_id|><|start_header_id|>assistant<|end_header_id|>`, correcto para
+  Llama 3. Lo elige el adaptador `AutoGuess` (en el log de carga:
+  `Chat completion heuristic: Llama 3.x`).
+- **Los samplers nativos se respetan** (leído en el código, no medido):
+  `transform_genparams()` en `/usr/share/koboldcpp/koboldcpp.py` conserva el
+  diccionario de la petición, y la función de generación lee `min_p`, `top_k`,
+  `rep_pen`, etc. de ahí (líneas ~2228-2239). `rep_pen` también se acepta como
+  `repetition_penalty` o `repeat_penalty` (se queda el mayor). `max_tokens` se
+  traduce a `max_length`.
+
+### Respuesta
+
+`HTTP/1.0 200`, `content-type: text/event-stream`, sin `Content-Length`; mismas
+cabeceras y misma fragmentación que el endpoint nativo.
+
+Diferencias con el formato nativo:
+
+- **No hay línea `event:`**, solo `data: {json}` y la línea vacía. Según el
+  estándar SSE, un evento sin `event:` es de tipo `message`.
+- El token viene en `choices[0].delta.content`.
+- El final se marca dos veces: primero un evento con
+  `choices[0].finish_reason` no nulo (`"stop"` al terminar el turno, `"length"`
+  al agotar `max_tokens`) y `content` vacío; después una línea `data: [DONE]`,
+  que **no es JSON** y no hay que intentar parsear.
+- Cada evento repite `id`, `object`, `created`, `model` y `role`: se ignoran.
+
+Ejemplo real (el texto termina cuando el modelo emite su token de fin de turno):
+
+```
+data: {"id": "chatcmpl-A372044", ..., "choices": [{"index": 0, "finish_reason": null, "delta": {"role": "assistant", "content": "El"}}]}
+
+data: {"id": "chatcmpl-A372044", ..., "choices": [{"index": 0, "finish_reason": "stop", "delta": {"role": "assistant", "content": ""}}]}
+
+data: [DONE]
+
+```
+
 ## Pendiente de Fase 0
 
 - [x] Captura de carga fallida por VRAM insuficiente
